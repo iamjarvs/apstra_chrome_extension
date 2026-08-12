@@ -2,11 +2,15 @@ const elements = {
   appShell: document.getElementById("appShell"),
   toggleNavButton: document.getElementById("toggleNavButton"),
   homeView: document.getElementById("homeView"),
+  gatewaysView: document.getElementById("gatewaysView"),
   configletsView: document.getElementById("configletsView"),
   navHome: document.getElementById("navHome"),
   navConfiglets: document.getElementById("navConfiglets"),
+  navGateways: document.getElementById("navGateways"),
   openConfigletsBtn: document.getElementById("openConfigletsBtn"),
+  openGatewaysBtn: document.getElementById("openGatewaysBtn"),
   backHomeButton: document.getElementById("backHomeButton"),
+  backHomeFromGatewaysButton: document.getElementById("backHomeFromGatewaysButton"),
   connectionBadge: document.getElementById("connectionBadge"),
   hostValue: document.getElementById("hostValue"),
   tokenValue: document.getElementById("tokenValue"),
@@ -15,6 +19,7 @@ const elements = {
   refreshButton: document.getElementById("refreshButton"),
   trafficButton: document.getElementById("trafficButton"),
   loadButton: document.getElementById("loadButton"),
+  loadGatewaysButton: document.getElementById("loadGatewaysButton"),
   searchInput: document.getElementById("searchInput"),
   blueprintFilter: document.getElementById("blueprintFilter"),
   sortOrder: document.getElementById("sortOrder"),
@@ -23,13 +28,27 @@ const elements = {
   summaryConfiglets: document.getElementById("summaryConfiglets"),
   summaryFailures: document.getElementById("summaryFailures"),
   summaryUnused: document.getElementById("summaryUnused"),
+  gatewaySummaryBlueprints: document.getElementById("gatewaySummaryBlueprints"),
+  gatewaySummaryGateways: document.getElementById("gatewaySummaryGateways"),
+  gatewaySummaryConnections: document.getElementById("gatewaySummaryConnections"),
+  gatewaySummaryPairs: document.getElementById("gatewaySummaryPairs"),
+  gatewaySummaryConfirmed: document.getElementById("gatewaySummaryConfirmed"),
+  gatewayDiagram: document.getElementById("gatewayDiagram"),
+  gatewayDiagramCaption: document.getElementById("gatewayDiagramCaption"),
+  gatewayZoomOutButton: document.getElementById("gatewayZoomOutButton"),
+  gatewayZoomInButton: document.getElementById("gatewayZoomInButton"),
+  gatewayZoomResetButton: document.getElementById("gatewayZoomResetButton"),
   activeResultsBody: document.getElementById("activeResultsBody"),
   unusedResultsBody: document.getElementById("unusedResultsBody"),
+  gatewayConnectionsBody: document.getElementById("gatewayConnectionsBody"),
+  gatewayUnmatchedBody: document.getElementById("gatewayUnmatchedBody"),
   exportActiveCsvButton: document.getElementById("exportActiveCsvButton"),
   exportUnusedCsvButton: document.getElementById("exportUnusedCsvButton"),
   homeErrorBanner: document.getElementById("homeErrorBanner"),
   errorBanner: document.getElementById("errorBanner"),
+  gatewaysErrorBanner: document.getElementById("gatewaysErrorBanner"),
   updatedAt: document.getElementById("updatedAt"),
+  gatewaysUpdatedAt: document.getElementById("gatewaysUpdatedAt"),
   toast: document.getElementById("toast"),
   activeDetailsModal: document.getElementById("activeDetailsModal"),
   activeDetailsTitle: document.getElementById("activeDetailsTitle"),
@@ -41,8 +60,23 @@ const appState = {
   view: "home",
   connection: null,
   report: null,
+  gatewayReport: null,
   loadingStatus: false,
   loadingReport: false,
+  loadingGatewayReport: false,
+  gatewayDiagramViewport: {
+    scale: 1,
+    translateX: 0,
+    translateY: 0
+  },
+  gatewayDiagramDrag: {
+    dragging: false,
+    startX: 0,
+    startY: 0,
+    startTranslateX: 0,
+    startTranslateY: 0
+  },
+  gatewayDiagramCleanup: null,
   refreshingEntryKey: "",
   activeDetailsRowKey: "",
   copiedToastTimer: null,
@@ -68,6 +102,14 @@ function wireEvents() {
     setView("configlets");
   });
 
+  elements.navGateways.addEventListener("click", () => {
+    if (!isAuthReady()) {
+      showError("Capture token/auth headers first.", "home");
+      return;
+    }
+    setView("gateways");
+  });
+
   elements.openConfigletsBtn.addEventListener("click", () => {
     if (!isAuthReady()) {
       showError("Capture token/auth headers first.", "home");
@@ -80,7 +122,20 @@ function wireEvents() {
     }
   });
 
+  elements.openGatewaysBtn.addEventListener("click", () => {
+    if (!isAuthReady()) {
+      showError("Capture token/auth headers first.", "home");
+      return;
+    }
+
+    setView("gateways");
+    if (!appState.gatewayReport) {
+      void loadGatewayReport();
+    }
+  });
+
   elements.backHomeButton.addEventListener("click", () => setView("home"));
+  elements.backHomeFromGatewaysButton.addEventListener("click", () => setView("home"));
 
   elements.refreshButton.addEventListener("click", () => {
     void refreshConnectionStatus();
@@ -92,6 +147,23 @@ function wireEvents() {
 
   elements.loadButton.addEventListener("click", () => {
     void loadReport();
+  });
+
+  elements.loadGatewaysButton.addEventListener("click", () => {
+    void loadGatewayReport();
+  });
+
+  elements.gatewayZoomOutButton.addEventListener("click", () => {
+    zoomGatewayDiagramBy(-0.15);
+  });
+
+  elements.gatewayZoomInButton.addEventListener("click", () => {
+    zoomGatewayDiagramBy(0.15);
+  });
+
+  elements.gatewayZoomResetButton.addEventListener("click", () => {
+    resetGatewayDiagramViewport();
+    applyGatewayDiagramTransform();
   });
 
   elements.exportActiveCsvButton.addEventListener("click", () => {
@@ -231,7 +303,9 @@ async function initialize() {
   setView("home");
   renderConnectionState();
   renderSummary();
+  renderGatewaySummary();
   renderTables();
+  renderGatewayTables();
   await refreshConnectionStatus();
 }
 
@@ -240,14 +314,17 @@ function setView(view) {
 
   const isHome = view === "home";
   const isConfiglets = view === "configlets";
+  const isGateways = view === "gateways";
 
   elements.homeView.classList.toggle("hidden", !isHome);
   elements.configletsView.classList.toggle("hidden", !isConfiglets);
+  elements.gatewaysView.classList.toggle("hidden", !isGateways);
 
   elements.navHome.classList.toggle("active", isHome);
   elements.navConfiglets.classList.toggle("active", isConfiglets);
+  elements.navGateways.classList.toggle("active", isGateways);
 
-  if (isHome) {
+  if (!isConfiglets) {
     closeActiveDetails();
   }
 }
@@ -264,6 +341,7 @@ async function refreshConnectionStatus() {
   appState.loadingStatus = true;
   clearError("home");
   clearError("report");
+  clearError("gateway");
   elements.statusMessage.textContent = "Checking active tab...";
   renderConnectionState();
 
@@ -336,6 +414,51 @@ async function loadReport() {
     showError(error.message || "Unable to load report", "report");
   } finally {
     appState.loadingReport = false;
+    renderConnectionState();
+  }
+}
+
+async function loadGatewayReport() {
+  if (appState.loadingGatewayReport) {
+    return;
+  }
+
+  if (!isAuthReady()) {
+    showError("Capture token/auth headers first.", "home");
+    setView("home");
+    return;
+  }
+
+  appState.loadingGatewayReport = true;
+  clearError("gateway");
+  elements.gatewaysUpdatedAt.textContent = "Loading gateway report...";
+  renderGatewayLoading();
+  renderConnectionState();
+
+  try {
+    const response = await sendMessage("runGatewayConnectionsReport");
+    appState.connection = response.connection;
+    appState.gatewayReport = response.report;
+    resetGatewayDiagramViewport();
+
+    renderGatewaySummary();
+    renderGatewayTables();
+    elements.gatewaysUpdatedAt.textContent = formatUpdatedAt(response.report.generatedAt);
+
+    if (response.report.partialFailures.length > 0) {
+      showError(
+        `Loaded with ${response.report.partialFailures.length} partial failure(s).`,
+        "gateway"
+      );
+    }
+  } catch (error) {
+    appState.gatewayReport = null;
+    renderGatewaySummary();
+    renderGatewayTables();
+    elements.gatewaysUpdatedAt.textContent = "Gateway report failed";
+    showError(error.message || "Unable to load gateway report", "gateway");
+  } finally {
+    appState.loadingGatewayReport = false;
     renderConnectionState();
   }
 }
@@ -417,14 +540,17 @@ function renderConnectionState() {
 
   const authReady = isAuthReady();
   elements.openConfigletsBtn.disabled = !authReady;
+  elements.openGatewaysBtn.disabled = !authReady;
   elements.navConfiglets.disabled = !authReady;
+  elements.navGateways.disabled = !authReady;
 
   elements.refreshButton.disabled = appState.loadingStatus;
   elements.trafficButton.disabled = !connection || connection.state === "NOT_ON_DCD_TAB";
   elements.loadButton.disabled = !authReady || appState.loadingReport;
+  elements.loadGatewaysButton.disabled = !authReady || appState.loadingGatewayReport;
 
   elements.homeHint.textContent = authReady
-    ? "Ready. Select Configlet Audit to run or rerun the report."
+    ? "Ready. Select Configlet Audit or Gateway Links to run reports."
     : "Capture token/auth headers first. Keep the Data Center Director tab active and click Refresh Token Capture.";
 }
 
@@ -445,6 +571,707 @@ function renderSummary() {
   elements.summaryConfiglets.textContent = numberFormat(report.uniqueConfigletCount);
   elements.summaryFailures.textContent = numberFormat(report.outOfSyncConfigletCount);
   elements.summaryUnused.textContent = numberFormat(report.unusedConfigletCount || 0);
+}
+
+function renderGatewaySummary() {
+  const report = appState.gatewayReport;
+
+  if (!report) {
+    elements.gatewaySummaryBlueprints.textContent = "-";
+    elements.gatewaySummaryGateways.textContent = "-";
+    elements.gatewaySummaryConnections.textContent = "-";
+    elements.gatewaySummaryPairs.textContent = "-";
+    elements.gatewaySummaryConfirmed.textContent = "-";
+    return;
+  }
+
+  elements.gatewaySummaryBlueprints.textContent = numberFormat(report.blueprintCount);
+  elements.gatewaySummaryGateways.textContent = numberFormat(report.totalRemoteGateways);
+  elements.gatewaySummaryConnections.textContent = numberFormat(report.connectionCount);
+  elements.gatewaySummaryPairs.textContent = numberFormat(report.blueprintPairCount);
+  elements.gatewaySummaryConfirmed.textContent = numberFormat(report.bgpBackedConnectionCount);
+}
+
+function renderGatewayLoading() {
+  elements.gatewayConnectionsBody.innerHTML =
+    '<tr class="placeholder-row"><td colspan="5">Loading gateway connections...</td></tr>';
+  elements.gatewayUnmatchedBody.innerHTML =
+    '<tr class="placeholder-row"><td colspan="5">Loading unmatched gateway entries...</td></tr>';
+  elements.gatewayDiagram.innerHTML =
+    '<div class="gateway-diagram-empty">Loading connectivity diagram...</div>';
+  elements.gatewayDiagramCaption.textContent =
+    "Edge color: green = high confidence, amber = medium, gray = low. Drag to pan, wheel or +/- to zoom.";
+}
+
+function renderGatewayTables() {
+  renderGatewayDiagram();
+  renderGatewayConnectionsTable();
+  renderGatewayUnmatchedTable();
+}
+
+function renderGatewayDiagram() {
+  if (!appState.gatewayReport) {
+    clearGatewayDiagramInteractions();
+    elements.gatewayDiagram.innerHTML =
+      '<div class="gateway-diagram-empty">Run refresh to render blueprint connectivity.</div>';
+    elements.gatewayDiagramCaption.textContent =
+      "Edge color: green = high confidence, amber = medium, gray = low. Drag to pan, wheel or +/- to zoom.";
+    return;
+  }
+
+  const model = buildGatewayDiagramModel(appState.gatewayReport);
+
+  if (model.edges.length === 0) {
+    clearGatewayDiagramInteractions();
+    elements.gatewayDiagram.innerHTML =
+      '<div class="gateway-diagram-empty">No inter-blueprint gateway links found to draw.</div>';
+    elements.gatewayDiagramCaption.textContent =
+      `Detected ${numberFormat(model.nodes.length)} blueprint node(s) with remote gateways but no cross-blueprint links.`;
+    return;
+  }
+
+  elements.gatewayDiagram.innerHTML = renderGatewayDiagramSvg(model);
+  wireGatewayDiagramInteractions();
+  applyGatewayDiagramTransform();
+  elements.gatewayDiagramCaption.textContent =
+    `${numberFormat(model.nodes.length)} blueprint nodes, ${numberFormat(model.edges.length)} edge(s). Edge color: green = high confidence, amber = medium, gray = low. Drag to pan, wheel or +/- to zoom.`;
+}
+
+function buildGatewayDiagramModel(report) {
+  const rows = Array.isArray(report?.rows) ? report.rows : [];
+  const blueprintRows = Array.isArray(report?.blueprintRows) ? report.blueprintRows : [];
+
+  const nodeMap = new Map();
+
+  for (const row of blueprintRows) {
+    if (!row?.blueprintId) {
+      continue;
+    }
+
+    if ((Number(row.remoteGatewayCount) || 0) <= 0) {
+      continue;
+    }
+
+    nodeMap.set(row.blueprintId, {
+      id: row.blueprintId,
+      name: row.blueprintName || row.blueprintId,
+      remoteGatewayCount: Number(row.remoteGatewayCount) || 0,
+      bgpSessionCount: Number(row.bgpSessionCount) || 0
+    });
+  }
+
+  const edgeMap = new Map();
+
+  for (const row of rows) {
+    const leftId = row.sourceBlueprintId || "";
+    const rightId = row.targetBlueprintId || "";
+    if (!leftId || !rightId) {
+      continue;
+    }
+
+    if (!nodeMap.has(leftId)) {
+      nodeMap.set(leftId, {
+        id: leftId,
+        name: row.sourceBlueprintName || leftId,
+        remoteGatewayCount: 0,
+        bgpSessionCount: 0
+      });
+    }
+
+    if (!nodeMap.has(rightId)) {
+      nodeMap.set(rightId, {
+        id: rightId,
+        name: row.targetBlueprintName || rightId,
+        remoteGatewayCount: 0,
+        bgpSessionCount: 0
+      });
+    }
+
+    const edgeKey = leftId < rightId ? `${leftId}|${rightId}` : `${rightId}|${leftId}`;
+
+    if (!edgeMap.has(edgeKey)) {
+      edgeMap.set(edgeKey, {
+        key: edgeKey,
+        leftId,
+        rightId,
+        confidence: row.confidence || "low",
+        hasBgpEvidence: Boolean(row.hasBgpEvidence),
+        reciprocalConfig: Boolean(row.reciprocalConfig),
+        linkCount: 1
+      });
+      continue;
+    }
+
+    const existing = edgeMap.get(edgeKey);
+    existing.linkCount += 1;
+    existing.hasBgpEvidence = existing.hasBgpEvidence || Boolean(row.hasBgpEvidence);
+    existing.reciprocalConfig = existing.reciprocalConfig || Boolean(row.reciprocalConfig);
+
+    if (gatewayConfidenceScore(row.confidence || "low") > gatewayConfidenceScore(existing.confidence)) {
+      existing.confidence = row.confidence || "low";
+    }
+  }
+
+  const nodes = Array.from(nodeMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  const edges = Array.from(edgeMap.values());
+
+  const layout = layoutGatewayDiagram(nodes, edges, 900);
+  return {
+    width: layout.width,
+    height: layout.height,
+    nodes: layout.nodes,
+    edges: layout.edges
+  };
+}
+
+function layoutGatewayDiagram(nodes, edges, maxWidth) {
+  const adjacency = new Map(nodes.map((node) => [node.id, new Set()]));
+  for (const edge of edges) {
+    adjacency.get(edge.leftId)?.add(edge.rightId);
+    adjacency.get(edge.rightId)?.add(edge.leftId);
+  }
+
+  const components = [];
+  const visited = new Set();
+
+  for (const node of nodes) {
+    if (visited.has(node.id)) {
+      continue;
+    }
+
+    const queue = [node.id];
+    visited.add(node.id);
+    const componentIds = [];
+
+    while (queue.length > 0) {
+      const currentId = queue.shift();
+      componentIds.push(currentId);
+
+      for (const neighborId of adjacency.get(currentId) || []) {
+        if (visited.has(neighborId)) {
+          continue;
+        }
+
+        visited.add(neighborId);
+        queue.push(neighborId);
+      }
+    }
+
+    components.push(componentIds);
+  }
+
+  components.sort((a, b) => b.length - a.length);
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const positionedNodes = [];
+  const positionById = new Map();
+
+  const canvasWidth = Math.max(700, maxWidth || 900);
+  const margin = 28;
+  const gap = 24;
+  const nodeRadius = 34;
+
+  let cursorX = margin;
+  let cursorY = margin;
+  let rowHeight = 0;
+  let usedWidth = margin;
+
+  for (const componentIds of components) {
+    const count = componentIds.length;
+    const radius = count === 1 ? 0 : Math.max(74, 34 * count);
+    const componentWidth = Math.max(220, radius * 2 + 160);
+    const componentHeight = Math.max(200, radius * 2 + 130);
+
+    if (cursorX + componentWidth + margin > canvasWidth && cursorX > margin) {
+      cursorX = margin;
+      cursorY += rowHeight + gap;
+      rowHeight = 0;
+    }
+
+    const centerX = cursorX + componentWidth / 2;
+    const centerY = cursorY + componentHeight / 2;
+
+    const sortedNodes = componentIds
+      .map((id) => nodeById.get(id))
+      .filter(Boolean)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    sortedNodes.forEach((node, index) => {
+      let x = centerX;
+      let y = centerY;
+
+      if (sortedNodes.length > 1) {
+        if (sortedNodes.length === 2) {
+          x = centerX + (index === 0 ? -radius : radius);
+          y = centerY;
+        } else {
+          const angle = (-Math.PI / 2) + ((2 * Math.PI * index) / sortedNodes.length);
+          x = centerX + (radius * Math.cos(angle));
+          y = centerY + (radius * Math.sin(angle));
+        }
+      }
+
+      const positioned = {
+        ...node,
+        x,
+        y
+      };
+
+      positionedNodes.push(positioned);
+      positionById.set(node.id, positioned);
+    });
+
+    cursorX += componentWidth + gap;
+    rowHeight = Math.max(rowHeight, componentHeight);
+    usedWidth = Math.max(usedWidth, cursorX);
+  }
+
+  // Center the occupied node cloud so small topologies do not hug the left edge.
+  if (positionedNodes.length > 0) {
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+
+    for (const node of positionedNodes) {
+      minX = Math.min(minX, node.x - nodeRadius);
+      maxX = Math.max(maxX, node.x + nodeRadius);
+    }
+
+    const currentCenterX = (minX + maxX) / 2;
+    const targetCenterX = canvasWidth / 2;
+    const shiftX = targetCenterX - currentCenterX;
+
+    for (const node of positionedNodes) {
+      node.x += shiftX;
+      positionById.set(node.id, node);
+    }
+  }
+
+  const height = cursorY + rowHeight + margin;
+
+  const positionedEdges = edges
+    .map((edge) => {
+      const left = positionById.get(edge.leftId);
+      const right = positionById.get(edge.rightId);
+      if (!left || !right) {
+        return null;
+      }
+
+      return {
+        ...edge,
+        x1: left.x,
+        y1: left.y,
+        x2: right.x,
+        y2: right.y,
+        midX: (left.x + right.x) / 2,
+        midY: (left.y + right.y) / 2,
+        curvePolarity: getEdgeCurvePolarity(edge.key)
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    width: Math.max(canvasWidth, usedWidth + margin),
+    height: Math.max(260, height),
+    nodes: positionedNodes,
+    edges: positionedEdges
+  };
+}
+
+function renderGatewayDiagramSvg(model) {
+  const markerDefs = `
+    <defs>
+      <marker id="gwArrowHead" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L10,4 L0,8 z" fill="#7a8ea4"></path>
+      </marker>
+      <filter id="gwNodeShadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#7ea4c9" flood-opacity="0.24"></feDropShadow>
+      </filter>
+    </defs>
+  `;
+
+  const edgeSvg = model.edges.map((edge) => {
+    const confidenceClass =
+      edge.confidence === "high"
+        ? "gw-edge-high"
+        : edge.confidence === "medium"
+          ? "gw-edge-medium"
+          : "gw-edge-low";
+
+    const path = buildCurvedEdgePath(edge);
+
+    const edgeTitle = `${edge.leftName || edge.leftId} <-> ${edge.rightName || edge.rightId} | ${edge.confidence || "low"} confidence | ${edge.linkCount} link(s)`;
+
+    const linkCountLabel = edge.linkCount > 1
+      ? `
+        <rect class="gw-edge-count-bg" x="${(edge.midX - 11).toFixed(1)}" y="${(edge.midY - 9).toFixed(1)}" width="22" height="14" rx="7"></rect>
+        <text class="gw-edge-count-text" x="${edge.midX.toFixed(1)}" y="${(edge.midY + 1).toFixed(1)}">${edge.linkCount}</text>
+      `
+      : "";
+
+    return `
+      <g>
+        <path class="gw-edge ${confidenceClass}" d="${path}" marker-end="url(#gwArrowHead)"></path>
+        <title>${escapeHtml(edgeTitle)}</title>
+        ${linkCountLabel}
+      </g>
+    `;
+  }).join("");
+
+  const nodeSvg = model.nodes.map((node) => {
+    const label = splitNodeLabel(node.name || node.id, 10);
+    const meta = `${numberFormat(node.remoteGatewayCount)} gw`;
+    const tooltip = `${node.name}\n${node.id}\n${numberFormat(node.remoteGatewayCount)} gateway(s)`;
+
+    return `
+      <g class="gw-node">
+        <circle class="gw-node-circle" cx="${node.x.toFixed(1)}" cy="${node.y.toFixed(1)}" r="34"></circle>
+        <text class="gw-node-title" x="${node.x.toFixed(1)}" y="${(node.y - 8).toFixed(1)}">${escapeHtml(label.line1)}</text>
+        ${label.line2 ? `<text class="gw-node-title" x="${node.x.toFixed(1)}" y="${(node.y + 5).toFixed(1)}">${escapeHtml(label.line2)}</text>` : ""}
+        <text class="gw-node-meta" x="${node.x.toFixed(1)}" y="${(node.y + 22).toFixed(1)}">${escapeHtml(meta)}</text>
+        <title>${escapeHtml(tooltip)}</title>
+      </g>
+    `;
+  }).join("");
+
+  return `
+    <svg class="gateway-diagram-svg" viewBox="0 0 ${model.width} ${model.height}" role="img" aria-label="Blueprint gateway connectivity diagram">
+      ${markerDefs}
+      ${edgeSvg}
+      ${nodeSvg}
+    </svg>
+  `;
+}
+
+function buildCurvedEdgePath(edge) {
+  const dx = edge.x2 - edge.x1;
+  const dy = edge.y2 - edge.y1;
+  const distance = Math.max(1, Math.hypot(dx, dy));
+  const nx = -dy / distance;
+  const ny = dx / distance;
+
+  const curveAmount = Math.min(24, Math.max(8, distance * 0.08));
+  const curve = curveAmount * (edge.curvePolarity || 1);
+  const cx = edge.midX + (nx * curve);
+  const cy = edge.midY + (ny * curve);
+
+  return `M ${edge.x1.toFixed(1)} ${edge.y1.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${edge.x2.toFixed(1)} ${edge.y2.toFixed(1)}`;
+}
+
+function getEdgeCurvePolarity(value) {
+  const text = String(value || "");
+  let hash = 0;
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) - hash) + text.charCodeAt(index);
+    hash |= 0;
+  }
+
+  return (hash & 1) === 0 ? 1 : -1;
+}
+
+function splitNodeLabel(value, maxLineLength) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return { line1: "(unnamed)", line2: "" };
+  }
+
+  const dashParts = text.split(" - ").map((part) => part.trim()).filter(Boolean);
+  if (dashParts.length === 2) {
+    return {
+      line1: truncateMiddle(dashParts[0], maxLineLength),
+      line2: truncateMiddle(dashParts[1], maxLineLength)
+    };
+  }
+
+  if (text.length <= maxLineLength) {
+    return { line1: text, line2: "" };
+  }
+
+  const words = text.split(/\s+/g).filter(Boolean);
+  if (words.length > 1) {
+    let line1 = "";
+    let line2 = "";
+
+    for (const word of words) {
+      if (!line1 || `${line1} ${word}`.length <= maxLineLength) {
+        line1 = line1 ? `${line1} ${word}` : word;
+        continue;
+      }
+
+      line2 = `${line2} ${word}`.trim();
+    }
+
+    if (line2.length > maxLineLength) {
+      line2 = truncateMiddle(line2, maxLineLength);
+    }
+
+    return { line1: truncateMiddle(line1, maxLineLength), line2 };
+  }
+
+  const first = text.slice(0, maxLineLength);
+  const second = truncateMiddle(text.slice(maxLineLength), maxLineLength);
+  return { line1: first, line2: second };
+}
+
+function clearGatewayDiagramInteractions() {
+  if (typeof appState.gatewayDiagramCleanup === "function") {
+    appState.gatewayDiagramCleanup();
+  }
+
+  appState.gatewayDiagramCleanup = null;
+  appState.gatewayDiagramDrag.dragging = false;
+  elements.gatewayDiagram.classList.remove("is-dragging");
+}
+
+function wireGatewayDiagramInteractions() {
+  clearGatewayDiagramInteractions();
+
+  const svg = elements.gatewayDiagram.querySelector("svg.gateway-diagram-svg");
+  if (!(svg instanceof SVGElement)) {
+    return;
+  }
+
+  const onWheel = (event) => {
+    event.preventDefault();
+
+    const delta = event.deltaY > 0 ? -0.12 : 0.12;
+    zoomGatewayDiagramBy(delta, event.clientX, event.clientY);
+  };
+
+  const onPointerDown = (event) => {
+    appState.gatewayDiagramDrag.dragging = true;
+    appState.gatewayDiagramDrag.startX = event.clientX;
+    appState.gatewayDiagramDrag.startY = event.clientY;
+    appState.gatewayDiagramDrag.startTranslateX = appState.gatewayDiagramViewport.translateX;
+    appState.gatewayDiagramDrag.startTranslateY = appState.gatewayDiagramViewport.translateY;
+    elements.gatewayDiagram.classList.add("is-dragging");
+  };
+
+  const onPointerMove = (event) => {
+    if (!appState.gatewayDiagramDrag.dragging) {
+      return;
+    }
+
+    const dx = event.clientX - appState.gatewayDiagramDrag.startX;
+    const dy = event.clientY - appState.gatewayDiagramDrag.startY;
+
+    appState.gatewayDiagramViewport.translateX = appState.gatewayDiagramDrag.startTranslateX + dx;
+    appState.gatewayDiagramViewport.translateY = appState.gatewayDiagramDrag.startTranslateY + dy;
+    applyGatewayDiagramTransform();
+  };
+
+  const onPointerUp = () => {
+    appState.gatewayDiagramDrag.dragging = false;
+    elements.gatewayDiagram.classList.remove("is-dragging");
+  };
+
+  elements.gatewayDiagram.addEventListener("wheel", onWheel, { passive: false });
+  elements.gatewayDiagram.addEventListener("pointerdown", onPointerDown);
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+  window.addEventListener("pointercancel", onPointerUp);
+
+  appState.gatewayDiagramCleanup = () => {
+    elements.gatewayDiagram.removeEventListener("wheel", onWheel);
+    elements.gatewayDiagram.removeEventListener("pointerdown", onPointerDown);
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+    window.removeEventListener("pointercancel", onPointerUp);
+  };
+}
+
+function resetGatewayDiagramViewport() {
+  appState.gatewayDiagramViewport.scale = 1;
+  appState.gatewayDiagramViewport.translateX = 0;
+  appState.gatewayDiagramViewport.translateY = 0;
+}
+
+function zoomGatewayDiagramBy(delta, anchorClientX = null, anchorClientY = null) {
+  const svg = elements.gatewayDiagram.querySelector("svg.gateway-diagram-svg");
+  if (!(svg instanceof SVGElement)) {
+    return;
+  }
+
+  const currentScale = appState.gatewayDiagramViewport.scale;
+  const nextScale = clampNumber(currentScale + delta, 0.55, 2.8);
+  if (nextScale === currentScale) {
+    return;
+  }
+
+  const rect = svg.getBoundingClientRect();
+  const pointX = anchorClientX === null ? rect.left + (rect.width / 2) : anchorClientX;
+  const pointY = anchorClientY === null ? rect.top + (rect.height / 2) : anchorClientY;
+  const localX = pointX - rect.left;
+  const localY = pointY - rect.top;
+
+  const factor = nextScale / currentScale;
+
+  appState.gatewayDiagramViewport.translateX =
+    localX - ((localX - appState.gatewayDiagramViewport.translateX) * factor);
+  appState.gatewayDiagramViewport.translateY =
+    localY - ((localY - appState.gatewayDiagramViewport.translateY) * factor);
+  appState.gatewayDiagramViewport.scale = nextScale;
+
+  applyGatewayDiagramTransform();
+}
+
+function applyGatewayDiagramTransform() {
+  const svg = elements.gatewayDiagram.querySelector("svg.gateway-diagram-svg");
+  if (!(svg instanceof SVGElement)) {
+    return;
+  }
+
+  const { scale, translateX, translateY } = appState.gatewayDiagramViewport;
+  svg.style.transform = `translate(${translateX.toFixed(1)}px, ${translateY.toFixed(1)}px) scale(${scale.toFixed(3)})`;
+}
+
+function clampNumber(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function gatewayConfidenceScore(confidence) {
+  if (confidence === "high") {
+    return 3;
+  }
+
+  if (confidence === "medium") {
+    return 2;
+  }
+
+  return 1;
+}
+
+function truncateMiddle(value, maxLength) {
+  const text = String(value || "");
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  const head = Math.ceil((maxLength - 1) / 2);
+  const tail = Math.floor((maxLength - 1) / 2);
+  return `${text.slice(0, head)}~${text.slice(text.length - tail)}`;
+}
+
+function renderGatewayConnectionsTable() {
+  const rows = Array.isArray(appState.gatewayReport?.rows) ? appState.gatewayReport.rows : [];
+
+  if (!appState.gatewayReport) {
+    elements.gatewayConnectionsBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">Run refresh to load gateway connections.</td></tr>';
+    return;
+  }
+
+  if (rows.length === 0) {
+    elements.gatewayConnectionsBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">No inter-blueprint gateway matches were detected.</td></tr>';
+    return;
+  }
+
+  elements.gatewayConnectionsBody.innerHTML = rows.map((row) => `
+    <tr>
+      <td>
+        <div class="cell-title">${escapeHtml(row.sourceBlueprintName)}</div>
+        <div class="cell-subtle gateway-mono">${escapeHtml(row.sourceBlueprintId)}</div>
+      </td>
+      <td>
+        <div class="cell-title">${escapeHtml(row.sourceGatewayName || row.sourceGatewayId || "(unknown)")}</div>
+        <div class="gateway-meta">
+          <span>IP: ${escapeHtml(row.sourceGatewayIp || "n/a")}</span>
+          <span>ASN: ${escapeHtml(row.sourceGatewayAsn ?? "n/a")}</span>
+          <span>Local GW Nodes: ${escapeHtml((row.sourceLocalNodeLabels || []).join(", ") || "n/a")}</span>
+        </div>
+      </td>
+      <td>
+        <div class="cell-title">${escapeHtml(row.targetBlueprintName)}</div>
+        <div class="cell-subtle gateway-mono">${escapeHtml(row.targetBlueprintId)}</div>
+      </td>
+      <td>
+        <div class="cell-title">${escapeHtml(row.targetGatewayName || row.targetGatewayId || "(unknown)")}</div>
+        <div class="gateway-meta">
+          <span>IP: ${escapeHtml(row.targetGatewayIp || "n/a")}</span>
+          <span>ASN: ${escapeHtml(row.targetGatewayAsn ?? "n/a")}</span>
+          <span>Local GW Nodes: ${escapeHtml((row.targetLocalNodeLabels || []).join(", ") || "n/a")}</span>
+        </div>
+      </td>
+      <td>
+        ${renderGatewayEvidenceCell(row)}
+      </td>
+    </tr>
+  `).join("");
+}
+
+function renderGatewayUnmatchedTable() {
+  const rows = Array.isArray(appState.gatewayReport?.unmatchedRows)
+    ? appState.gatewayReport.unmatchedRows
+    : [];
+
+  if (!appState.gatewayReport) {
+    elements.gatewayUnmatchedBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">Run refresh to inspect unmatched gateway entries.</td></tr>';
+    return;
+  }
+
+  if (rows.length === 0) {
+    elements.gatewayUnmatchedBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">No unmatched gateway entries.</td></tr>';
+    return;
+  }
+
+  elements.gatewayUnmatchedBody.innerHTML = rows.map((row) => `
+    <tr>
+      <td>
+        <div class="cell-title">${escapeHtml(row.blueprintName)}</div>
+        <div class="cell-subtle gateway-mono">${escapeHtml(row.blueprintId)}</div>
+      </td>
+      <td>
+        <div class="cell-title">${escapeHtml(row.gatewayName || row.gatewayId || "(unknown)")}</div>
+      </td>
+      <td>
+        <div class="cell-title gateway-mono">${escapeHtml(row.gatewayIp || "n/a")}</div>
+      </td>
+      <td>
+        <div class="gateway-meta">
+          <span>Nodes: ${escapeHtml((row.localNodeLabels || []).join(", ") || "n/a")}</span>
+          <span>Local EVPN IPs: ${escapeHtml((row.localEvpnIps || []).join(", ") || "n/a")}</span>
+        </div>
+      </td>
+      <td>
+        <div class="cell-subtle">${escapeHtml(row.reason || "Unknown reason")}</div>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function renderGatewayEvidenceCell(row) {
+  const className =
+    row.confidence === "high"
+      ? "evidence-high"
+      : row.confidence === "medium"
+        ? "evidence-medium"
+        : "evidence-low";
+
+  const label =
+    row.confidence === "high"
+      ? "High confidence"
+      : row.confidence === "medium"
+        ? "Medium confidence"
+        : "Low confidence";
+
+  const sharedPairs = Array.isArray(row.sharedBgpPairs) ? row.sharedBgpPairs : [];
+
+  const lines = [
+    `<li>Reciprocal gateway config: <strong>${row.reciprocalConfig ? "Yes" : "No"}</strong></li>`,
+    `<li>BGP evidence: <strong>${row.hasBgpEvidence ? "Yes" : "No"}</strong></li>`
+  ];
+
+  if (sharedPairs.length > 0) {
+    lines.push(`<li>Shared BGP endpoint pairs: <span class="gateway-mono">${escapeHtml(sharedPairs.join(", "))}</span></li>`);
+  }
+
+  return `
+    <span class="evidence-pill ${className}">${label}</span>
+    <ul class="evidence-list">${lines.join("")}</ul>
+  `;
 }
 
 function renderTableLoading() {
@@ -1115,7 +1942,12 @@ function splitLines(text) {
 }
 
 function showError(message, scope) {
-  const target = scope === "home" ? elements.homeErrorBanner : elements.errorBanner;
+  const target =
+    scope === "home"
+      ? elements.homeErrorBanner
+      : scope === "gateway"
+        ? elements.gatewaysErrorBanner
+        : elements.errorBanner;
   target.textContent = message;
   target.classList.remove("hidden");
 }
@@ -1129,6 +1961,11 @@ function clearError(scope) {
   if (scope === "report" || !scope) {
     elements.errorBanner.textContent = "";
     elements.errorBanner.classList.add("hidden");
+  }
+
+  if (scope === "gateway" || !scope) {
+    elements.gatewaysErrorBanner.textContent = "";
+    elements.gatewaysErrorBanner.classList.add("hidden");
   }
 }
 
@@ -1159,7 +1996,16 @@ async function sendMessage(type, payload = {}) {
       }
 
       if (!response?.ok) {
-        reject(new Error(response?.error?.message || "Extension request failed"));
+        const rawErrorMessage = response?.error?.message || "Extension request failed";
+
+        // If popup JS is newer than the active service worker, MV3 can return
+        // Unsupported request until the extension is reloaded.
+        if (rawErrorMessage === "Unsupported request") {
+          reject(new Error("Gateway Links requires a full extension reload so the background service worker picks up the new handler."));
+          return;
+        }
+
+        reject(new Error(rawErrorMessage));
         return;
       }
 

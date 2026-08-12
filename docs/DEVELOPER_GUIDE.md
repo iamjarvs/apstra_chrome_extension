@@ -46,6 +46,7 @@ The popup talks to background through message types:
 - getConnectionStatus
 - refreshActiveTabTraffic
 - runConfigletsReport
+- runGatewayConnectionsReport
 - refreshConfigletFromGlobal
 
 Response envelope is always:
@@ -88,6 +89,21 @@ refreshConfigletFromGlobal does this:
 4. Replace label, display_name, generators from global catalog.
 5. PUT back to /api/blueprints/{blueprint_id}/configlets/{configlet_id}.
 
+### 4) Gateway links correlation report
+
+runGatewayConnectionsReport does this:
+
+1. Load all blueprints.
+2. For each blueprint, load remote gateways from /api/blueprints/{id}/remote_gateways.
+3. For each blueprint, query /api/blueprints/{id}/ql for protocol sessions and endpoint-to-IP mapping.
+4. Keep only routing == bgp sessions and derive endpoint IP pairs per session.
+5. Correlate remote gateway gw_ip to other blueprints' local gateway EVPN RD IPs.
+6. Mark confidence:
+   - high: reciprocal config + shared BGP pair evidence
+   - medium: either reciprocal config or shared BGP pair evidence
+   - low: config match only
+7. Return matched rows + unmatched gateway rows with reasons.
+
 ## Data Model Notes
 
 Active table rows are grouped configlet rows with:
@@ -105,6 +121,17 @@ Unused table rows include:
 - lastUpdatedAt
 - catalogText
 
+Gateway report rows include:
+
+- sourceBlueprintId / sourceBlueprintName
+- sourceGatewayName / sourceGatewayIp / sourceGatewayAsn
+- targetBlueprintId / targetBlueprintName
+- targetGatewayName / targetGatewayIp / targetGatewayAsn
+- reciprocalConfig
+- hasBgpEvidence
+- sharedBgpPairs[]
+- confidence
+
 The details modal renders blueprint-level cards from row.entries.
 
 ## UI Design Standards
@@ -113,7 +140,7 @@ Keep these standards for visual consistency:
 
 1. Preserve design tokens in popup/popup.css :root.
 2. Keep left navigation collapsed by default (app-shell is-collapsed-nav on load).
-3. Preserve two-view model (home + configlets) unless a new tool is explicitly approved.
+3. Preserve three-view model (home + configlets + gateways) unless a new tool is explicitly approved.
 4. Keep status badge semantics:
    - status-ready
    - status-pending
@@ -133,6 +160,11 @@ Keep these standards for visual consistency:
 8. Keep links explicit:
    - global configlet link to /#/design/configlets/{id}
    - blueprint configlet page link to /#/blueprints/{id}/staged/catalog/configlets
+9. Keep gateway diagram interaction predictable:
+   - drag to pan
+   - wheel/+/- to zoom
+   - reset returns to centered baseline
+10. Keep diagram labels short enough to remain inside node boundaries.
 
 ## Behavior and Safety Standards
 
@@ -175,6 +207,9 @@ Keep these standards for visual consistency:
 5. If refresh action appears to do nothing:
    - verify click handler location (table vs modal)
    - verify async button disabled state and error banner updates
+6. If Gateway Links says Unsupported request:
+   - popup is newer than active service worker
+   - reload the extension in chrome://extensions
 
 ## Manual Test Matrix (minimum)
 
@@ -189,6 +224,14 @@ Keep these standards for visual consistency:
    - out-of-sync counts change as expected
 7. Export both CSV files and inspect headers/rows.
 8. Validate Apstra Uncommitted/Logical Diff reflects staged configlet changes.
+9. Run Gateway Links refresh and validate:
+   - matched and unmatched tables populate
+   - confidence labels align with evidence
+   - diagram renders expected nodes/edges
+10. Validate diagram interaction:
+   - drag pans
+   - mouse wheel and +/- zoom
+   - reset re-centers and normalizes zoom
 
 ## LLM Contributor Guardrails
 
@@ -214,6 +257,8 @@ Keep these standards for visual consistency:
 - GET /api/design/configlets
 - GET /api/blueprints/{blueprint_id}/configlets/{configlet_id}
 - PUT /api/blueprints/{blueprint_id}/configlets/{configlet_id}
+- GET /api/blueprints/{blueprint_id}/remote_gateways
+- POST /api/blueprints/{blueprint_id}/ql
 
 ## Definition of Done for New Features
 

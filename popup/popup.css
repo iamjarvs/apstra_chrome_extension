@@ -534,6 +534,167 @@ tbody tr.details-row:hover {
   color: #355772;
 }
 
+.evidence-pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.evidence-high {
+  background: #dff7e8;
+  color: #0f5f36;
+}
+
+.evidence-medium {
+  background: #fff4e0;
+  color: #7a4a12;
+}
+
+.evidence-low {
+  background: #edf3fa;
+  color: #355772;
+}
+
+.evidence-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  color: #4f667c;
+  font-size: 12px;
+}
+
+.gateway-meta {
+  display: grid;
+  gap: 3px;
+  color: #536b7f;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.gateway-mono {
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.gateway-diagram-wrap {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 10% 8%, #eef6ff 0%, transparent 45%),
+    linear-gradient(180deg, #ffffff, #fbfdff);
+  min-height: 280px;
+  padding: 12px;
+  overflow: auto;
+  position: relative;
+  cursor: grab;
+  touch-action: none;
+}
+
+.gateway-diagram-wrap.is-dragging {
+  cursor: grabbing;
+}
+
+.gateway-diagram-header {
+  align-items: center;
+}
+
+.gateway-diagram-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.gateway-diagram-controls .btn-mini {
+  min-width: 42px;
+}
+
+.gateway-diagram-empty {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+  color: #5e7286;
+  font-size: 13px;
+}
+
+.gateway-diagram-caption {
+  margin: 6px 2px 0;
+  color: #5c6f80;
+  font-size: 12px;
+}
+
+.gateway-diagram-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  user-select: none;
+  transform-origin: 0 0;
+}
+
+.gw-node text {
+  pointer-events: none;
+}
+
+.gw-edge {
+  fill: none;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  opacity: 0.9;
+}
+
+.gw-edge-high {
+  stroke: #2b9b4d;
+}
+
+.gw-edge-medium {
+  stroke: #cc8b22;
+}
+
+.gw-edge-low {
+  stroke: #6f8092;
+}
+
+.gw-node-circle {
+  fill: #f7fbff;
+  stroke: #6f9fca;
+  stroke-width: 1.8;
+  filter: url(#gwNodeShadow);
+  transition: transform 120ms ease, stroke 120ms ease;
+  transform-origin: center;
+}
+
+.gw-node:hover .gw-node-circle {
+  stroke: #4f89bf;
+}
+
+.gw-node-title {
+  fill: #17354f;
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.gw-node-meta {
+  fill: #51677d;
+  font-size: 9.5px;
+  text-anchor: middle;
+}
+
+.gw-edge-count-bg {
+  fill: #ffffff;
+  stroke: #c8d8ea;
+  stroke-width: 1;
+}
+
+.gw-edge-count-text {
+  fill: #34536f;
+  font-size: 10px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
 .sync-unused {
   background: #e4f0fc;
   color: #24517b;
