@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Data Center Director Tools",
+  "description": "UI-first Chrome extension for Data Center Director operational tooling. MVP includes Configlets by Blueprint.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "Data Center Director Tools",
+    "default_popup": "popup/popup.html"
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage",
+    "webRequest",
+    "scripting",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ]
+}
