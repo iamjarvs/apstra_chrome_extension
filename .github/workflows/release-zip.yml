@@ -19,8 +19,7 @@ jobs:
       - name: Build extension zip
         run: |
           mkdir -p dist
-          SHORT_SHA="${GITHUB_SHA::7}"
-          ZIP_NAME="apstra-extension-${SHORT_SHA}.zip"
+          ZIP_NAME="apstra-extension-main-latest.zip"
 
           zip -r "dist/${ZIP_NAME}" \
             manifest.json \
@@ -32,17 +31,32 @@ jobs:
         id: package
 
       - name: Create or update rolling release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: main-latest
-          name: Main Latest Build
-          body: |
-            Automatic build from main.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: main-latest
+          TITLE: Main Latest Build
+          ZIP_PATH: dist/${{ steps.package.outputs.zip_name }}
+        run: |
+          NOTES_FILE="$(mktemp)"
+          cat > "$NOTES_FILE" <<EOF
+          Automatic build from main.
 
-            Commit: ${{ github.sha }}
-          prerelease: true
-          allowUpdates: true
-          replacesArtifacts: true
-          removeArtifacts: true
-          makeLatest: true
-          artifacts: dist/${{ steps.package.outputs.zip_name }}
+          Commit: ${GITHUB_SHA}
+          EOF
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP_PATH" --clobber
+            gh release edit "$TAG" \
+              --title "$TITLE" \
+              --notes-file "$NOTES_FILE" \
+              --prerelease \
+              --latest=false \
+              --target "$GITHUB_SHA"
+          else
+            gh release create "$TAG" "$ZIP_PATH" \
+              --title "$TITLE" \
+              --notes-file "$NOTES_FILE" \
+              --prerelease \
+              --latest=false \
+              --target "$GITHUB_SHA"
+          fi
