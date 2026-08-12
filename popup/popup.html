@@ -28,6 +28,14 @@
             <span class="tool-short">G</span>
             <span class="tool-text">Gateway Links</span>
           </button>
+          <button id="navVxlans" class="tool-link" type="button" aria-label="VXLAN Stretch" title="VXLAN Stretch">
+            <span class="tool-short">V</span>
+            <span class="tool-text">VXLAN Stretch</span>
+          </button>
+          <button id="navVrfs" class="tool-link" type="button" aria-label="VRF Stretch" title="VRF Stretch">
+            <span class="tool-short">R</span>
+            <span class="tool-text">VRF Stretch</span>
+          </button>
         </nav>
       </aside>
 
@@ -63,6 +71,14 @@
             <button id="openGatewaysBtn" class="option-card" type="button">
               <h3>Gateway Links</h3>
               <p>Find inter-blueprint gateway relationships and BGP-backed evidence.</p>
+            </button>
+            <button id="openVxlansBtn" class="option-card" type="button">
+              <h3>VXLAN Stretch</h3>
+              <p>Compare VXLAN presence across blueprints and bulk copy missing VXLAN definitions.</p>
+            </button>
+            <button id="openVrfsBtn" class="option-card" type="button">
+              <h3>VRF Stretch</h3>
+              <p>Compare VRF/security-zone presence across blueprints and bulk copy missing VRFs.</p>
             </button>
           </section>
 
@@ -181,6 +197,330 @@
 
           <footer class="panel-footer">
             <span id="gatewaysUpdatedAt">No data loaded</span>
+          </footer>
+        </section>
+
+        <section id="vxlansView" class="view hidden">
+          <header class="panel-header compact">
+            <div class="title-row">
+              <button id="backHomeFromVxlansButton" class="btn btn-secondary" type="button">Back to Home</button>
+              <div>
+                <h2>VXLAN Stretch</h2>
+                <p class="subtitle">Group VXLANs by blueprint presence and stretch selected VXLAN definitions to missing blueprints.</p>
+              </div>
+            </div>
+            <button id="loadVxlansButton" class="btn btn-primary" type="button">Refresh</button>
+          </header>
+
+          <section id="vxlansErrorBanner" class="error-banner hidden" role="alert"></section>
+
+          <section class="summary-grid" id="vxlanSummaryGrid">
+            <article>
+              <h3>Blueprints</h3>
+              <p id="vxlanSummaryBlueprints">-</p>
+            </article>
+            <article>
+              <h3>Total VXLAN Entries</h3>
+              <p id="vxlanSummaryTotal">-</p>
+            </article>
+            <article>
+              <h3>Unique VXLANs</h3>
+              <p id="vxlanSummaryUnique">-</p>
+            </article>
+            <article>
+              <h3>Present In All</h3>
+              <p id="vxlanSummaryFull">-</p>
+            </article>
+            <article>
+              <h3>Stretchable</h3>
+              <p id="vxlanSummaryPartial">-</p>
+            </article>
+          </section>
+
+          <section class="vxlan-controls-card">
+            <div class="vxlan-control-block">
+              <h3>Step 1: Select Blueprint Scope</h3>
+              <p class="cell-subtle">Choose the data-center blueprints you want to evaluate together for stretch readiness.</p>
+              <div id="vxlanScopeList" class="vxlan-checkbox-grid" aria-live="polite"></div>
+            </div>
+            <div class="vxlan-action-row">
+              <button id="openVxlanPlannerButton" class="btn btn-primary" type="button">Step 2: Open Stretch Planner</button>
+              <span id="vxlanSelectionStatus" class="cell-subtle">Select scope, then open planner.</span>
+            </div>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Blueprint Stretch Compatibility In Scope</h3>
+            <div class="table-wrap table-wrap-unused" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                  <col class="col-sync" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Blueprint</th>
+                    <th>Can Stretch To</th>
+                    <th>Can Receive From</th>
+                    <th>Scope Notes</th>
+                  </tr>
+                </thead>
+                <tbody id="vxlanBlueprintCompatibilityBody">
+                  <tr class="placeholder-row">
+                    <td colspan="4">Run refresh, then select scope blueprints.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Already Present Across Selected Blueprints</h3>
+            <div class="table-wrap table-wrap-unused" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-configlet" />
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>VXLAN</th>
+                    <th>Security Zone / Subnets</th>
+                    <th>Present Blueprints</th>
+                  </tr>
+                </thead>
+                <tbody id="vxlanFullBody">
+                  <tr class="placeholder-row">
+                    <td colspan="3">Run refresh to compare VXLAN presence.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Present In Subset (Stretch Candidates)</h3>
+            <div class="table-wrap table-wrap-active" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-configlet" />
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                  <col class="col-sync" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>VXLAN</th>
+                    <th>Present</th>
+                    <th>Missing</th>
+                    <th>Planner Readiness</th>
+                  </tr>
+                </thead>
+                <tbody id="vxlanPartialBody">
+                  <tr class="placeholder-row">
+                    <td colspan="4">Run refresh to find stretch candidates.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Last Stretch Operation</h3>
+            <div class="table-wrap table-wrap-unused" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-configlet" />
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                  <col class="col-sync" />
+                  <col class="col-blueprints" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>VXLAN</th>
+                    <th>Source</th>
+                    <th>Target</th>
+                    <th>Status</th>
+                    <th>Message</th>
+                  </tr>
+                </thead>
+                <tbody id="vxlanLastResultsBody">
+                  <tr class="placeholder-row">
+                    <td colspan="5">No stretch operation has run yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <footer class="panel-footer">
+            <span id="vxlansUpdatedAt">No data loaded</span>
+          </footer>
+        </section>
+
+        <section id="vrfsView" class="view hidden">
+          <header class="panel-header compact">
+            <div class="title-row">
+              <button id="backHomeFromVrfsButton" class="btn btn-secondary" type="button">Back to Home</button>
+              <div>
+                <h2>VRF Stretch</h2>
+                <p class="subtitle">Group VRFs by blueprint presence and stretch selected VRF definitions to missing blueprints.</p>
+              </div>
+            </div>
+            <button id="loadVrfsButton" class="btn btn-primary" type="button">Refresh</button>
+          </header>
+
+          <section id="vrfsErrorBanner" class="error-banner hidden" role="alert"></section>
+
+          <section class="summary-grid" id="vrfSummaryGrid">
+            <article>
+              <h3>Blueprints</h3>
+              <p id="vrfSummaryBlueprints">-</p>
+            </article>
+            <article>
+              <h3>Total VRF Entries</h3>
+              <p id="vrfSummaryTotal">-</p>
+            </article>
+            <article>
+              <h3>Unique VRFs</h3>
+              <p id="vrfSummaryUnique">-</p>
+            </article>
+            <article>
+              <h3>Present In All</h3>
+              <p id="vrfSummaryFull">-</p>
+            </article>
+            <article>
+              <h3>Stretchable</h3>
+              <p id="vrfSummaryPartial">-</p>
+            </article>
+          </section>
+
+          <section class="vxlan-controls-card">
+            <div class="vxlan-control-block">
+              <h3>Step 1: Select Blueprint Scope</h3>
+              <p class="cell-subtle">Choose the data-center blueprints you want to evaluate together for VRF stretch readiness.</p>
+              <div id="vrfScopeList" class="vxlan-checkbox-grid" aria-live="polite"></div>
+            </div>
+            <div class="vxlan-action-row">
+              <button id="openVrfPlannerButton" class="btn btn-primary" type="button">Step 2: Open Stretch Planner</button>
+              <span id="vrfSelectionStatus" class="cell-subtle">Select scope, then open planner.</span>
+            </div>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Blueprint Stretch Compatibility In Scope</h3>
+            <div class="table-wrap table-wrap-unused" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                  <col class="col-sync" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Blueprint</th>
+                    <th>Can Stretch To</th>
+                    <th>Can Receive From</th>
+                    <th>Scope Notes</th>
+                  </tr>
+                </thead>
+                <tbody id="vrfBlueprintCompatibilityBody">
+                  <tr class="placeholder-row">
+                    <td colspan="4">Run refresh, then select scope blueprints.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Already Present Across Selected Blueprints</h3>
+            <div class="table-wrap table-wrap-unused" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-configlet" />
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>VRF</th>
+                    <th>Type / VRF Name</th>
+                    <th>Present Blueprints</th>
+                  </tr>
+                </thead>
+                <tbody id="vrfFullBody">
+                  <tr class="placeholder-row">
+                    <td colspan="3">Run refresh to compare VRF presence.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Present In Subset (Stretch Candidates)</h3>
+            <div class="table-wrap table-wrap-active" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-configlet" />
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                  <col class="col-sync" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>VRF</th>
+                    <th>Present</th>
+                    <th>Missing</th>
+                    <th>Planner Readiness</th>
+                  </tr>
+                </thead>
+                <tbody id="vrfPartialBody">
+                  <tr class="placeholder-row">
+                    <td colspan="4">Run refresh to find stretch candidates.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Last Stretch Operation</h3>
+            <div class="table-wrap table-wrap-unused" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-configlet" />
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                  <col class="col-sync" />
+                  <col class="col-blueprints" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>VRF</th>
+                    <th>Source</th>
+                    <th>Target</th>
+                    <th>Status</th>
+                    <th>Message</th>
+                  </tr>
+                </thead>
+                <tbody id="vrfLastResultsBody">
+                  <tr class="placeholder-row">
+                    <td colspan="5">No stretch operation has run yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <footer class="panel-footer">
+            <span id="vrfsUpdatedAt">No data loaded</span>
           </footer>
         </section>
 
@@ -319,6 +659,122 @@
           <button id="closeActiveDetailsButton" class="btn btn-secondary" type="button">Close</button>
         </header>
         <div id="activeDetailsBody" class="modal-body"></div>
+      </div>
+    </div>
+
+    <div id="vxlanPlannerModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="vxlanPlannerTitle">
+      <div class="modal-card vxlan-planner-modal">
+        <header class="modal-header">
+          <h3 id="vxlanPlannerTitle">VXLAN Stretch Planner</h3>
+          <button id="closeVxlanPlannerButton" class="btn btn-secondary" type="button">Close</button>
+        </header>
+        <div class="modal-body">
+          <section class="vxlan-control-block">
+            <h3>Step 2: Select VXLANs In This Scope</h3>
+            <p class="cell-subtle">Optionally set a preferred source blueprint, then choose only the VXLANs you want stretched across missing blueprints in the selected scope.</p>
+          </section>
+
+          <section class="vxlan-planner-grid">
+            <div class="vxlan-control-block">
+              <label for="vxlanSourceBlueprint">Preferred source blueprint (optional)</label>
+              <select id="vxlanSourceBlueprint"></select>
+            </div>
+          </section>
+
+          <section class="vxlan-action-row">
+            <button id="vxlanSelectStretchableButton" class="btn btn-secondary" type="button">Select Stretchable</button>
+            <button id="vxlanClearSelectionButton" class="btn btn-secondary" type="button">Clear Selection</button>
+            <button id="vxlanStretchSelectedButton" class="btn btn-primary" type="button">Stretch Selected</button>
+            <span id="vxlanPlannerSelectionStatus" class="cell-subtle">No VXLAN selected.</span>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Stretch Candidates (Scoped)</h3>
+            <div class="table-wrap table-wrap-active" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-action" />
+                  <col class="col-configlet" />
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                  <col class="col-sync" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Select</th>
+                    <th>VXLAN</th>
+                    <th>Source In Scope</th>
+                    <th>Targets In Scope</th>
+                    <th>Stretch Plan</th>
+                  </tr>
+                </thead>
+                <tbody id="vxlanPlannerBody">
+                  <tr class="placeholder-row">
+                    <td colspan="5">Open planner after loading VXLAN report.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="vrfPlannerModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="vrfPlannerTitle">
+      <div class="modal-card vxlan-planner-modal">
+        <header class="modal-header">
+          <h3 id="vrfPlannerTitle">VRF Stretch Planner</h3>
+          <button id="closeVrfPlannerButton" class="btn btn-secondary" type="button">Close</button>
+        </header>
+        <div class="modal-body">
+          <section class="vxlan-control-block">
+            <h3>Step 2: Select VRFs In This Scope</h3>
+            <p class="cell-subtle">Optionally set a preferred source blueprint, then choose only the VRFs you want stretched across missing blueprints in the selected scope.</p>
+          </section>
+
+          <section class="vxlan-planner-grid">
+            <div class="vxlan-control-block">
+              <label for="vrfSourceBlueprint">Preferred source blueprint (optional)</label>
+              <select id="vrfSourceBlueprint"></select>
+            </div>
+          </section>
+
+          <section class="vxlan-action-row">
+            <button id="vrfSelectStretchableButton" class="btn btn-secondary" type="button">Select Stretchable</button>
+            <button id="vrfClearSelectionButton" class="btn btn-secondary" type="button">Clear Selection</button>
+            <button id="vrfStretchSelectedButton" class="btn btn-primary" type="button">Stretch Selected</button>
+            <span id="vrfPlannerSelectionStatus" class="cell-subtle">No VRF selected.</span>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Stretch Candidates (Scoped)</h3>
+            <div class="table-wrap table-wrap-active" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-action" />
+                  <col class="col-configlet" />
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                  <col class="col-sync" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Select</th>
+                    <th>VRF</th>
+                    <th>Source In Scope</th>
+                    <th>Targets In Scope</th>
+                    <th>Stretch Plan</th>
+                  </tr>
+                </thead>
+                <tbody id="vrfPlannerBody">
+                  <tr class="placeholder-row">
+                    <td colspan="5">Open planner after loading VRF report.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
 

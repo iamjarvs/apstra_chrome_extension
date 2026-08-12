@@ -3,14 +3,22 @@ const elements = {
   toggleNavButton: document.getElementById("toggleNavButton"),
   homeView: document.getElementById("homeView"),
   gatewaysView: document.getElementById("gatewaysView"),
+  vxlansView: document.getElementById("vxlansView"),
+  vrfsView: document.getElementById("vrfsView"),
   configletsView: document.getElementById("configletsView"),
   navHome: document.getElementById("navHome"),
   navConfiglets: document.getElementById("navConfiglets"),
   navGateways: document.getElementById("navGateways"),
+  navVxlans: document.getElementById("navVxlans"),
+  navVrfs: document.getElementById("navVrfs"),
   openConfigletsBtn: document.getElementById("openConfigletsBtn"),
   openGatewaysBtn: document.getElementById("openGatewaysBtn"),
+  openVxlansBtn: document.getElementById("openVxlansBtn"),
+  openVrfsBtn: document.getElementById("openVrfsBtn"),
   backHomeButton: document.getElementById("backHomeButton"),
   backHomeFromGatewaysButton: document.getElementById("backHomeFromGatewaysButton"),
+  backHomeFromVxlansButton: document.getElementById("backHomeFromVxlansButton"),
+  backHomeFromVrfsButton: document.getElementById("backHomeFromVrfsButton"),
   connectionBadge: document.getElementById("connectionBadge"),
   hostValue: document.getElementById("hostValue"),
   tokenValue: document.getElementById("tokenValue"),
@@ -20,6 +28,10 @@ const elements = {
   trafficButton: document.getElementById("trafficButton"),
   loadButton: document.getElementById("loadButton"),
   loadGatewaysButton: document.getElementById("loadGatewaysButton"),
+  loadVxlansButton: document.getElementById("loadVxlansButton"),
+  loadVrfsButton: document.getElementById("loadVrfsButton"),
+  openVxlanPlannerButton: document.getElementById("openVxlanPlannerButton"),
+  openVrfPlannerButton: document.getElementById("openVrfPlannerButton"),
   searchInput: document.getElementById("searchInput"),
   blueprintFilter: document.getElementById("blueprintFilter"),
   sortOrder: document.getElementById("sortOrder"),
@@ -33,6 +45,40 @@ const elements = {
   gatewaySummaryConnections: document.getElementById("gatewaySummaryConnections"),
   gatewaySummaryPairs: document.getElementById("gatewaySummaryPairs"),
   gatewaySummaryConfirmed: document.getElementById("gatewaySummaryConfirmed"),
+  vxlanSummaryBlueprints: document.getElementById("vxlanSummaryBlueprints"),
+  vxlanSummaryTotal: document.getElementById("vxlanSummaryTotal"),
+  vxlanSummaryUnique: document.getElementById("vxlanSummaryUnique"),
+  vxlanSummaryFull: document.getElementById("vxlanSummaryFull"),
+  vxlanSummaryPartial: document.getElementById("vxlanSummaryPartial"),
+  vxlanScopeList: document.getElementById("vxlanScopeList"),
+  vxlanBlueprintCompatibilityBody: document.getElementById("vxlanBlueprintCompatibilityBody"),
+  vxlanSourceBlueprint: document.getElementById("vxlanSourceBlueprint"),
+  vxlanSelectStretchableButton: document.getElementById("vxlanSelectStretchableButton"),
+  vxlanClearSelectionButton: document.getElementById("vxlanClearSelectionButton"),
+  vxlanStretchSelectedButton: document.getElementById("vxlanStretchSelectedButton"),
+  vxlanSelectionStatus: document.getElementById("vxlanSelectionStatus"),
+  vxlanPlannerSelectionStatus: document.getElementById("vxlanPlannerSelectionStatus"),
+  vxlanFullBody: document.getElementById("vxlanFullBody"),
+  vxlanPartialBody: document.getElementById("vxlanPartialBody"),
+  vxlanPlannerBody: document.getElementById("vxlanPlannerBody"),
+  vxlanLastResultsBody: document.getElementById("vxlanLastResultsBody"),
+  vrfSummaryBlueprints: document.getElementById("vrfSummaryBlueprints"),
+  vrfSummaryTotal: document.getElementById("vrfSummaryTotal"),
+  vrfSummaryUnique: document.getElementById("vrfSummaryUnique"),
+  vrfSummaryFull: document.getElementById("vrfSummaryFull"),
+  vrfSummaryPartial: document.getElementById("vrfSummaryPartial"),
+  vrfScopeList: document.getElementById("vrfScopeList"),
+  vrfBlueprintCompatibilityBody: document.getElementById("vrfBlueprintCompatibilityBody"),
+  vrfSourceBlueprint: document.getElementById("vrfSourceBlueprint"),
+  vrfSelectStretchableButton: document.getElementById("vrfSelectStretchableButton"),
+  vrfClearSelectionButton: document.getElementById("vrfClearSelectionButton"),
+  vrfStretchSelectedButton: document.getElementById("vrfStretchSelectedButton"),
+  vrfSelectionStatus: document.getElementById("vrfSelectionStatus"),
+  vrfPlannerSelectionStatus: document.getElementById("vrfPlannerSelectionStatus"),
+  vrfFullBody: document.getElementById("vrfFullBody"),
+  vrfPartialBody: document.getElementById("vrfPartialBody"),
+  vrfPlannerBody: document.getElementById("vrfPlannerBody"),
+  vrfLastResultsBody: document.getElementById("vrfLastResultsBody"),
   gatewayDiagram: document.getElementById("gatewayDiagram"),
   gatewayDiagramCaption: document.getElementById("gatewayDiagramCaption"),
   gatewayZoomOutButton: document.getElementById("gatewayZoomOutButton"),
@@ -47,13 +93,21 @@ const elements = {
   homeErrorBanner: document.getElementById("homeErrorBanner"),
   errorBanner: document.getElementById("errorBanner"),
   gatewaysErrorBanner: document.getElementById("gatewaysErrorBanner"),
+  vxlansErrorBanner: document.getElementById("vxlansErrorBanner"),
+  vrfsErrorBanner: document.getElementById("vrfsErrorBanner"),
   updatedAt: document.getElementById("updatedAt"),
   gatewaysUpdatedAt: document.getElementById("gatewaysUpdatedAt"),
+  vxlansUpdatedAt: document.getElementById("vxlansUpdatedAt"),
+  vrfsUpdatedAt: document.getElementById("vrfsUpdatedAt"),
   toast: document.getElementById("toast"),
   activeDetailsModal: document.getElementById("activeDetailsModal"),
   activeDetailsTitle: document.getElementById("activeDetailsTitle"),
   activeDetailsBody: document.getElementById("activeDetailsBody"),
-  closeActiveDetailsButton: document.getElementById("closeActiveDetailsButton")
+  closeActiveDetailsButton: document.getElementById("closeActiveDetailsButton"),
+  vxlanPlannerModal: document.getElementById("vxlanPlannerModal"),
+  closeVxlanPlannerButton: document.getElementById("closeVxlanPlannerButton"),
+  vrfPlannerModal: document.getElementById("vrfPlannerModal"),
+  closeVrfPlannerButton: document.getElementById("closeVrfPlannerButton")
 };
 
 const appState = {
@@ -61,9 +115,25 @@ const appState = {
   connection: null,
   report: null,
   gatewayReport: null,
+  vxlanReport: null,
+  vrfReport: null,
   loadingStatus: false,
   loadingReport: false,
   loadingGatewayReport: false,
+  loadingVxlanReport: false,
+  loadingVrfReport: false,
+  stretchingVxlans: false,
+  stretchingVrfs: false,
+  vxlanScopeBlueprintIds: new Set(),
+  vxlanSelectedStretchKeys: new Set(),
+  vxlanSourceBlueprintId: "auto",
+  lastVxlanStretchResult: null,
+  vxlanPlannerOpen: false,
+  vrfScopeBlueprintIds: new Set(),
+  vrfSelectedStretchKeys: new Set(),
+  vrfSourceBlueprintId: "auto",
+  lastVrfStretchResult: null,
+  vrfPlannerOpen: false,
   gatewayDiagramViewport: {
     scale: 1,
     translateX: 0,
@@ -110,6 +180,24 @@ function wireEvents() {
     setView("gateways");
   });
 
+  elements.navVxlans.addEventListener("click", () => {
+    if (!isAuthReady()) {
+      showError("Capture token/auth headers first.", "home");
+      return;
+    }
+
+    setView("vxlans");
+  });
+
+  elements.navVrfs.addEventListener("click", () => {
+    if (!isAuthReady()) {
+      showError("Capture token/auth headers first.", "home");
+      return;
+    }
+
+    setView("vrfs");
+  });
+
   elements.openConfigletsBtn.addEventListener("click", () => {
     if (!isAuthReady()) {
       showError("Capture token/auth headers first.", "home");
@@ -134,8 +222,34 @@ function wireEvents() {
     }
   });
 
+  elements.openVxlansBtn.addEventListener("click", () => {
+    if (!isAuthReady()) {
+      showError("Capture token/auth headers first.", "home");
+      return;
+    }
+
+    setView("vxlans");
+    if (!appState.vxlanReport) {
+      void loadVxlanReport();
+    }
+  });
+
+  elements.openVrfsBtn.addEventListener("click", () => {
+    if (!isAuthReady()) {
+      showError("Capture token/auth headers first.", "home");
+      return;
+    }
+
+    setView("vrfs");
+    if (!appState.vrfReport) {
+      void loadVrfReport();
+    }
+  });
+
   elements.backHomeButton.addEventListener("click", () => setView("home"));
   elements.backHomeFromGatewaysButton.addEventListener("click", () => setView("home"));
+  elements.backHomeFromVxlansButton.addEventListener("click", () => setView("home"));
+  elements.backHomeFromVrfsButton.addEventListener("click", () => setView("home"));
 
   elements.refreshButton.addEventListener("click", () => {
     void refreshConnectionStatus();
@@ -151,6 +265,22 @@ function wireEvents() {
 
   elements.loadGatewaysButton.addEventListener("click", () => {
     void loadGatewayReport();
+  });
+
+  elements.loadVxlansButton.addEventListener("click", () => {
+    void loadVxlanReport();
+  });
+
+  elements.loadVrfsButton.addEventListener("click", () => {
+    void loadVrfReport();
+  });
+
+  elements.openVxlanPlannerButton.addEventListener("click", () => {
+    openVxlanPlanner();
+  });
+
+  elements.openVrfPlannerButton.addEventListener("click", () => {
+    openVrfPlanner();
   });
 
   elements.gatewayZoomOutButton.addEventListener("click", () => {
@@ -184,6 +314,152 @@ function wireEvents() {
 
   elements.sortOrder.addEventListener("change", () => {
     renderTables();
+  });
+
+  elements.vxlanScopeList.addEventListener("change", (event) => {
+    const input = event.target instanceof HTMLInputElement ? event.target : null;
+    if (!input || input.name !== "vxlan-scope") {
+      return;
+    }
+
+    if (input.checked) {
+      appState.vxlanScopeBlueprintIds.add(input.value);
+    } else {
+      appState.vxlanScopeBlueprintIds.delete(input.value);
+    }
+
+    if (appState.vxlanScopeBlueprintIds.size === 0) {
+      appState.vxlanScopeBlueprintIds.add(input.value);
+      input.checked = true;
+      showError("Select at least one blueprint in scope.", "vxlan");
+      return;
+    }
+
+    clearError("vxlan");
+    syncVxlanSourceAndTargetsAfterScopeChange();
+    if (getScopedBlueprintIds().length < 2) {
+      closeVxlanPlanner();
+    }
+    renderVxlanScopeControls();
+    renderVxlanSummary();
+    renderVxlanTables();
+  });
+
+  elements.vxlanSourceBlueprint.addEventListener("change", () => {
+    appState.vxlanSourceBlueprintId = elements.vxlanSourceBlueprint.value;
+
+    appState.vxlanSelectedStretchKeys.clear();
+    renderVxlanScopeControls();
+    renderVxlanTables();
+  });
+
+  elements.vxlanSelectStretchableButton.addEventListener("click", () => {
+    selectAllStretchableVxlans();
+  });
+
+  elements.vxlanClearSelectionButton.addEventListener("click", () => {
+    appState.vxlanSelectedStretchKeys.clear();
+    renderVxlanScopeControls();
+    renderVxlanTables();
+  });
+
+  elements.vxlanStretchSelectedButton.addEventListener("click", () => {
+    void stretchSelectedVxlans();
+  });
+
+  elements.vxlanPlannerBody.addEventListener("change", (event) => {
+    const input = event.target instanceof HTMLInputElement ? event.target : null;
+    if (!input || input.name !== "vxlan-select") {
+      return;
+    }
+
+    const stretchKey = input.dataset.stretchKey || "";
+    if (!stretchKey) {
+      return;
+    }
+
+    if (input.checked) {
+      appState.vxlanSelectedStretchKeys.add(stretchKey);
+    } else {
+      appState.vxlanSelectedStretchKeys.delete(stretchKey);
+    }
+
+    renderVxlanScopeControls();
+    renderVxlanPlannerControls();
+    renderConnectionState();
+  });
+
+  elements.vrfScopeList.addEventListener("change", (event) => {
+    const input = event.target instanceof HTMLInputElement ? event.target : null;
+    if (!input || input.name !== "vrf-scope") {
+      return;
+    }
+
+    if (input.checked) {
+      appState.vrfScopeBlueprintIds.add(input.value);
+    } else {
+      appState.vrfScopeBlueprintIds.delete(input.value);
+    }
+
+    if (appState.vrfScopeBlueprintIds.size === 0) {
+      appState.vrfScopeBlueprintIds.add(input.value);
+      input.checked = true;
+      showError("Select at least one blueprint in scope.", "vrf");
+      return;
+    }
+
+    clearError("vrf");
+    syncVrfSourceAndTargetsAfterScopeChange();
+    if (getScopedVrfBlueprintIds().length < 2) {
+      closeVrfPlanner();
+    }
+    renderVrfScopeControls();
+    renderVrfSummary();
+    renderVrfTables();
+  });
+
+  elements.vrfSourceBlueprint.addEventListener("change", () => {
+    appState.vrfSourceBlueprintId = elements.vrfSourceBlueprint.value;
+
+    appState.vrfSelectedStretchKeys.clear();
+    renderVrfScopeControls();
+    renderVrfTables();
+  });
+
+  elements.vrfSelectStretchableButton.addEventListener("click", () => {
+    selectAllStretchableVrfs();
+  });
+
+  elements.vrfClearSelectionButton.addEventListener("click", () => {
+    appState.vrfSelectedStretchKeys.clear();
+    renderVrfScopeControls();
+    renderVrfTables();
+  });
+
+  elements.vrfStretchSelectedButton.addEventListener("click", () => {
+    void stretchSelectedVrfs();
+  });
+
+  elements.vrfPlannerBody.addEventListener("change", (event) => {
+    const input = event.target instanceof HTMLInputElement ? event.target : null;
+    if (!input || input.name !== "vrf-select") {
+      return;
+    }
+
+    const stretchKey = input.dataset.stretchKey || "";
+    if (!stretchKey) {
+      return;
+    }
+
+    if (input.checked) {
+      appState.vrfSelectedStretchKeys.add(stretchKey);
+    } else {
+      appState.vrfSelectedStretchKeys.delete(stretchKey);
+    }
+
+    renderVrfScopeControls();
+    renderVrfPlannerControls();
+    renderConnectionState();
   });
 
   elements.activeResultsBody.addEventListener("click", (event) => {
@@ -296,6 +572,34 @@ function wireEvents() {
     if (event.key === "Escape" && !elements.activeDetailsModal.classList.contains("hidden")) {
       closeActiveDetails();
     }
+
+    if (event.key === "Escape" && !elements.vxlanPlannerModal.classList.contains("hidden")) {
+      closeVxlanPlanner();
+    }
+
+    if (event.key === "Escape" && !elements.vrfPlannerModal.classList.contains("hidden")) {
+      closeVrfPlanner();
+    }
+  });
+
+  elements.closeVxlanPlannerButton.addEventListener("click", () => {
+    closeVxlanPlanner();
+  });
+
+  elements.vxlanPlannerModal.addEventListener("click", (event) => {
+    if (event.target === elements.vxlanPlannerModal) {
+      closeVxlanPlanner();
+    }
+  });
+
+  elements.closeVrfPlannerButton.addEventListener("click", () => {
+    closeVrfPlanner();
+  });
+
+  elements.vrfPlannerModal.addEventListener("click", (event) => {
+    if (event.target === elements.vrfPlannerModal) {
+      closeVrfPlanner();
+    }
   });
 }
 
@@ -304,8 +608,12 @@ async function initialize() {
   renderConnectionState();
   renderSummary();
   renderGatewaySummary();
+  renderVxlanSummary();
+  renderVrfSummary();
   renderTables();
   renderGatewayTables();
+  renderVxlanTables();
+  renderVrfTables();
   await refreshConnectionStatus();
 }
 
@@ -315,17 +623,31 @@ function setView(view) {
   const isHome = view === "home";
   const isConfiglets = view === "configlets";
   const isGateways = view === "gateways";
+  const isVxlans = view === "vxlans";
+  const isVrfs = view === "vrfs";
 
   elements.homeView.classList.toggle("hidden", !isHome);
   elements.configletsView.classList.toggle("hidden", !isConfiglets);
   elements.gatewaysView.classList.toggle("hidden", !isGateways);
+  elements.vxlansView.classList.toggle("hidden", !isVxlans);
+  elements.vrfsView.classList.toggle("hidden", !isVrfs);
 
   elements.navHome.classList.toggle("active", isHome);
   elements.navConfiglets.classList.toggle("active", isConfiglets);
   elements.navGateways.classList.toggle("active", isGateways);
+  elements.navVxlans.classList.toggle("active", isVxlans);
+  elements.navVrfs.classList.toggle("active", isVrfs);
 
   if (!isConfiglets) {
     closeActiveDetails();
+  }
+
+  if (!isVxlans) {
+    closeVxlanPlanner();
+  }
+
+  if (!isVrfs) {
+    closeVrfPlanner();
   }
 }
 
@@ -342,6 +664,8 @@ async function refreshConnectionStatus() {
   clearError("home");
   clearError("report");
   clearError("gateway");
+  clearError("vxlan");
+  clearError("vrf");
   elements.statusMessage.textContent = "Checking active tab...";
   renderConnectionState();
 
@@ -463,6 +787,1255 @@ async function loadGatewayReport() {
   }
 }
 
+async function loadVxlanReport() {
+  if (appState.loadingVxlanReport) {
+    return;
+  }
+
+  if (!isAuthReady()) {
+    showError("Capture token/auth headers first.", "home");
+    setView("home");
+    return;
+  }
+
+  appState.loadingVxlanReport = true;
+  clearError("vxlan");
+  elements.vxlansUpdatedAt.textContent = "Loading VXLAN report...";
+  renderVxlanLoading();
+  renderConnectionState();
+
+  try {
+    const response = await sendMessage("runVxlanStretchReport");
+    appState.connection = response.connection;
+    appState.vxlanReport = response.report;
+    appState.vxlanSelectedStretchKeys.clear();
+
+    syncVxlanSourceAndTargetsAfterScopeChange(true);
+    renderVxlanSummary();
+    renderVxlanScopeControls();
+    renderVxlanTables();
+    elements.vxlansUpdatedAt.textContent = formatUpdatedAt(response.report.generatedAt);
+
+    if (response.report.partialFailures.length > 0) {
+      showError(
+        `Loaded with ${response.report.partialFailures.length} partial failure(s).`,
+        "vxlan"
+      );
+    }
+  } catch (error) {
+    appState.vxlanReport = null;
+    appState.vxlanScopeBlueprintIds.clear();
+    appState.vxlanSourceBlueprintId = "auto";
+    appState.vxlanSelectedStretchKeys.clear();
+    closeVxlanPlanner();
+    renderVxlanSummary();
+    renderVxlanScopeControls();
+    renderVxlanTables();
+    elements.vxlansUpdatedAt.textContent = "VXLAN report failed";
+    showError(error.message || "Unable to load VXLAN report", "vxlan");
+  } finally {
+    appState.loadingVxlanReport = false;
+    renderConnectionState();
+  }
+}
+
+async function loadVrfReport() {
+  if (appState.loadingVrfReport) {
+    return;
+  }
+
+  if (!isAuthReady()) {
+    showError("Capture token/auth headers first.", "home");
+    setView("home");
+    return;
+  }
+
+  appState.loadingVrfReport = true;
+  clearError("vrf");
+  elements.vrfsUpdatedAt.textContent = "Loading VRF report...";
+  renderVrfLoading();
+  renderConnectionState();
+
+  try {
+    const response = await sendMessage("runVrfStretchReport");
+    appState.connection = response.connection;
+    appState.vrfReport = response.report;
+    appState.vrfSelectedStretchKeys.clear();
+
+    syncVrfSourceAndTargetsAfterScopeChange(true);
+    renderVrfSummary();
+    renderVrfScopeControls();
+    renderVrfTables();
+    elements.vrfsUpdatedAt.textContent = formatUpdatedAt(response.report.generatedAt);
+
+    if (response.report.partialFailures.length > 0) {
+      showError(
+        `Loaded with ${response.report.partialFailures.length} partial failure(s).`,
+        "vrf"
+      );
+    }
+  } catch (error) {
+    appState.vrfReport = null;
+    appState.vrfScopeBlueprintIds.clear();
+    appState.vrfSourceBlueprintId = "auto";
+    appState.vrfSelectedStretchKeys.clear();
+    closeVrfPlanner();
+    renderVrfSummary();
+    renderVrfScopeControls();
+    renderVrfTables();
+    elements.vrfsUpdatedAt.textContent = "VRF report failed";
+    showError(error.message || "Unable to load VRF report", "vrf");
+  } finally {
+    appState.loadingVrfReport = false;
+    renderConnectionState();
+  }
+}
+
+function syncVxlanSourceAndTargetsAfterScopeChange(forceInitialize = false) {
+  const blueprints = Array.isArray(appState.vxlanReport?.blueprints) ? appState.vxlanReport.blueprints : [];
+  if (blueprints.length === 0) {
+    appState.vxlanScopeBlueprintIds.clear();
+    appState.vxlanSourceBlueprintId = "auto";
+    return;
+  }
+
+  const availableIds = new Set(blueprints.map((item) => item.blueprintId));
+
+  if (forceInitialize || appState.vxlanScopeBlueprintIds.size === 0) {
+    appState.vxlanScopeBlueprintIds = new Set(availableIds);
+  } else {
+    appState.vxlanScopeBlueprintIds = new Set(
+      Array.from(appState.vxlanScopeBlueprintIds).filter((item) => availableIds.has(item))
+    );
+
+    if (appState.vxlanScopeBlueprintIds.size === 0) {
+      appState.vxlanScopeBlueprintIds = new Set(availableIds);
+    }
+  }
+
+  const scopedIds = Array.from(appState.vxlanScopeBlueprintIds);
+
+  if (forceInitialize) {
+    appState.vxlanSourceBlueprintId = "auto";
+    return;
+  }
+
+  if (appState.vxlanSourceBlueprintId === "auto") {
+    return;
+  }
+
+  if (!scopedIds.includes(appState.vxlanSourceBlueprintId)) {
+    appState.vxlanSourceBlueprintId = "auto";
+  }
+}
+
+function renderVxlanSummary() {
+  const report = appState.vxlanReport;
+
+  if (!report) {
+    elements.vxlanSummaryBlueprints.textContent = "-";
+    elements.vxlanSummaryTotal.textContent = "-";
+    elements.vxlanSummaryUnique.textContent = "-";
+    elements.vxlanSummaryFull.textContent = "-";
+    elements.vxlanSummaryPartial.textContent = "-";
+    return;
+  }
+
+  const scopedRows = getScopedVxlanRows();
+  const fullCount = scopedRows.filter((row) => row.presentBlueprints.length === getScopedBlueprintIds().length).length;
+  const partialCount = scopedRows.filter((row) => row.presentBlueprints.length < getScopedBlueprintIds().length).length;
+
+  elements.vxlanSummaryBlueprints.textContent = numberFormat(getScopedBlueprintIds().length);
+  elements.vxlanSummaryTotal.textContent = numberFormat(report.totalVxlanCount);
+  elements.vxlanSummaryUnique.textContent = numberFormat(scopedRows.length);
+  elements.vxlanSummaryFull.textContent = numberFormat(fullCount);
+  elements.vxlanSummaryPartial.textContent = numberFormat(partialCount);
+}
+
+function renderVxlanLoading() {
+  elements.vxlanBlueprintCompatibilityBody.innerHTML =
+    '<tr class="placeholder-row"><td colspan="4">Loading blueprint compatibility...</td></tr>';
+  elements.vxlanFullBody.innerHTML =
+    '<tr class="placeholder-row"><td colspan="3">Loading VXLAN coverage...</td></tr>';
+  elements.vxlanPartialBody.innerHTML =
+    '<tr class="placeholder-row"><td colspan="4">Loading stretch candidates...</td></tr>';
+  elements.vxlanPlannerBody.innerHTML =
+    '<tr class="placeholder-row"><td colspan="5">Loading planner candidates...</td></tr>';
+}
+
+function renderVxlanScopeControls() {
+  const blueprints = Array.isArray(appState.vxlanReport?.blueprints) ? appState.vxlanReport.blueprints : [];
+
+  if (blueprints.length === 0) {
+    elements.vxlanScopeList.innerHTML = '<p class="cell-subtle">Run refresh to load blueprints.</p>';
+    elements.vxlanSelectionStatus.textContent = "Select scope, then open planner.";
+    elements.vxlanPlannerSelectionStatus.textContent = "No VXLAN selected.";
+    return;
+  }
+
+  const scopedBlueprintIds = getScopedBlueprintIds();
+  const sortedBlueprints = [...blueprints].sort((a, b) => a.blueprintName.localeCompare(b.blueprintName));
+
+  elements.vxlanScopeList.innerHTML = sortedBlueprints.map((blueprint) => {
+    const checked = appState.vxlanScopeBlueprintIds.has(blueprint.blueprintId) ? "checked" : "";
+    return `
+      <label class="vxlan-checkbox-item">
+        <input type="checkbox" name="vxlan-scope" value="${escapeHtml(blueprint.blueprintId)}" ${checked}>
+        <span class="meta">
+          <strong>${escapeHtml(blueprint.blueprintName)}</strong>
+          <span>${numberFormat(blueprint.vxlanCount)} VXLANs</span>
+        </span>
+      </label>
+    `;
+  }).join("");
+
+  const scopeCount = scopedBlueprintIds.length;
+  const selectedCount = appState.vxlanSelectedStretchKeys.size;
+  elements.vxlanSelectionStatus.textContent =
+    `Scope: ${numberFormat(scopeCount)} blueprint(s) | Planner selected: ${numberFormat(selectedCount)} VXLAN(s)`;
+}
+
+function renderVxlanPlannerControls() {
+  const blueprints = Array.isArray(appState.vxlanReport?.blueprints) ? appState.vxlanReport.blueprints : [];
+  if (blueprints.length === 0) {
+    elements.vxlanSourceBlueprint.innerHTML = '<option value="">No source blueprint</option>';
+    elements.vxlanPlannerSelectionStatus.textContent = "No VXLAN selected.";
+    return;
+  }
+
+  const scopedBlueprintIds = getScopedBlueprintIds();
+
+  const optionRows = [
+    '<option value="auto">Auto-select source per VXLAN</option>',
+    ...scopedBlueprintIds.map((blueprintId) => {
+      const blueprintName = getVxlanBlueprintNameById(blueprintId);
+      const selected = appState.vxlanSourceBlueprintId === blueprintId ? "selected" : "";
+      return `<option value="${escapeHtml(blueprintId)}" ${selected}>Prefer ${escapeHtml(blueprintName)}</option>`;
+    })
+  ];
+
+  if (
+    appState.vxlanSourceBlueprintId !== "auto" &&
+    !scopedBlueprintIds.includes(appState.vxlanSourceBlueprintId)
+  ) {
+    appState.vxlanSourceBlueprintId = "auto";
+  }
+
+  elements.vxlanSourceBlueprint.innerHTML = optionRows.join("");
+  elements.vxlanSourceBlueprint.value = appState.vxlanSourceBlueprintId || "auto";
+
+  const selectedCount = appState.vxlanSelectedStretchKeys.size;
+  const candidateCount = getStretchableVxlanRows().length;
+  elements.vxlanPlannerSelectionStatus.textContent =
+    `${numberFormat(selectedCount)} selected | ${numberFormat(candidateCount)} stretchable candidate(s) in scope`;
+}
+
+function renderVxlanBlueprintCompatibilityTable() {
+  if (!appState.vxlanReport) {
+    elements.vxlanBlueprintCompatibilityBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="4">Run refresh, then select scope blueprints.</td></tr>';
+    return;
+  }
+
+  const scopeIds = getScopedBlueprintIds();
+  if (scopeIds.length === 0) {
+    elements.vxlanBlueprintCompatibilityBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="4">Select at least one blueprint scope.</td></tr>';
+    return;
+  }
+
+  const scopedRows = getScopedVxlanRows();
+
+  const byBlueprint = new Map(
+    scopeIds.map((blueprintId) => [
+      blueprintId,
+      {
+        blueprintId,
+        blueprintName: getVxlanBlueprintNameById(blueprintId),
+        stretchTo: new Set(),
+        receiveFrom: new Set(),
+        sourceCandidateCount: 0,
+        receiveCandidateCount: 0
+      }
+    ])
+  );
+
+  for (const row of scopedRows) {
+    const presentIds = row.presentBlueprints.map((item) => item.blueprintId);
+    const missingIds = row.missingBlueprintIds || [];
+
+    if (missingIds.length === 0) {
+      continue;
+    }
+
+    for (const sourceId of presentIds) {
+      const source = byBlueprint.get(sourceId);
+      if (!source) {
+        continue;
+      }
+
+      source.sourceCandidateCount += 1;
+      for (const targetId of missingIds) {
+        source.stretchTo.add(targetId);
+      }
+    }
+
+    for (const targetId of missingIds) {
+      const target = byBlueprint.get(targetId);
+      if (!target) {
+        continue;
+      }
+
+      target.receiveCandidateCount += 1;
+      for (const sourceId of presentIds) {
+        target.receiveFrom.add(sourceId);
+      }
+    }
+  }
+
+  const rows = Array.from(byBlueprint.values()).sort((a, b) => a.blueprintName.localeCompare(b.blueprintName));
+  elements.vxlanBlueprintCompatibilityBody.innerHTML = rows.map((row) => {
+    const canStretchTo = Array.from(row.stretchTo).map((id) => getVxlanBlueprintNameById(id)).sort((a, b) => a.localeCompare(b));
+    const canReceiveFrom = Array.from(row.receiveFrom).map((id) => getVxlanBlueprintNameById(id)).sort((a, b) => a.localeCompare(b));
+
+    const notes = row.sourceCandidateCount === 0 && row.receiveCandidateCount === 0
+      ? "Fully aligned in selected scope"
+      : `${numberFormat(row.sourceCandidateCount)} source candidate(s), ${numberFormat(row.receiveCandidateCount)} receive candidate(s)`;
+
+    return `
+      <tr>
+        <td>
+          <div class="cell-title">${escapeHtml(row.blueprintName)}</div>
+          <div class="cell-subtle gateway-mono">${escapeHtml(row.blueprintId)}</div>
+        </td>
+        <td>
+          <div class="gateway-meta">
+            ${canStretchTo.length > 0 ? canStretchTo.map((name) => `<span>${escapeHtml(name)}</span>`).join("") : '<span>None</span>'}
+          </div>
+        </td>
+        <td>
+          <div class="gateway-meta">
+            ${canReceiveFrom.length > 0 ? canReceiveFrom.map((name) => `<span>${escapeHtml(name)}</span>`).join("") : '<span>None</span>'}
+          </div>
+        </td>
+        <td>
+          <div class="cell-subtle">${escapeHtml(notes)}</div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderVxlanTables() {
+  renderVxlanScopeControls();
+  renderVxlanPlannerControls();
+  renderVxlanBlueprintCompatibilityTable();
+  renderVxlanFullTable();
+  renderVxlanPartialTable();
+  renderVxlanPlannerTable();
+  renderVxlanLastResults();
+}
+
+function getScopedBlueprintIds() {
+  if (!appState.vxlanReport) {
+    return [];
+  }
+
+  const reportBlueprintIds = (appState.vxlanReport.blueprints || []).map((item) => item.blueprintId);
+
+  if (appState.vxlanScopeBlueprintIds.size === 0) {
+    return reportBlueprintIds;
+  }
+
+  return reportBlueprintIds.filter((item) => appState.vxlanScopeBlueprintIds.has(item));
+}
+
+function getScopedVxlanRows() {
+  const rows = Array.isArray(appState.vxlanReport?.rows) ? appState.vxlanReport.rows : [];
+  const scopeIds = getScopedBlueprintIds();
+  if (scopeIds.length === 0) {
+    return [];
+  }
+
+  return rows
+    .map((row) => {
+      const presentBlueprints = (row.presentBlueprints || []).filter((item) => scopeIds.includes(item.blueprintId));
+      const missingBlueprintIds = scopeIds.filter((item) => !presentBlueprints.some((entry) => entry.blueprintId === item));
+      return {
+        ...row,
+        presentBlueprints,
+        missingBlueprintIds
+      };
+    })
+    .filter((row) => row.presentBlueprints.length > 0);
+}
+
+function renderVxlanFullTable() {
+  if (!appState.vxlanReport) {
+    elements.vxlanFullBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="3">Run refresh to compare VXLAN presence.</td></tr>';
+    return;
+  }
+
+  const scopeIds = getScopedBlueprintIds();
+  const rows = getScopedVxlanRows().filter((row) => row.presentBlueprints.length === scopeIds.length);
+
+  if (rows.length === 0) {
+    elements.vxlanFullBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="3">No VXLAN is present across all selected blueprints.</td></tr>';
+    return;
+  }
+
+  elements.vxlanFullBody.innerHTML = rows.map((row) => `
+    <tr>
+      <td>
+        <div class="cell-title">${escapeHtml(row.primaryLabel)}</div>
+        <div class="cell-subtle">VNI: ${escapeHtml(row.vnId || "n/a")} | Key: ${escapeHtml(row.stretchKey)}</div>
+      </td>
+      <td>
+        <div class="gateway-meta">
+          <span>Security Zone: ${escapeHtml((row.securityZoneLabels || []).join(", ") || "n/a")}</span>
+          <span>IPv4: ${escapeHtml((row.ipv4Subnets || []).join(", ") || "n/a")}</span>
+          <span>IPv6: ${escapeHtml((row.ipv6Subnets || []).join(", ") || "n/a")}</span>
+        </div>
+      </td>
+      <td>
+        <div class="gateway-meta">
+          ${row.presentBlueprints.map((item) => `<span>${escapeHtml(item.blueprintName)}</span>`).join("")}
+        </div>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function renderVxlanPartialTable() {
+  if (!appState.vxlanReport) {
+    elements.vxlanPartialBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="4">Run refresh to find stretch candidates.</td></tr>';
+    return;
+  }
+
+  const scopeIds = getScopedBlueprintIds();
+  const rows = getScopedVxlanRows()
+    .filter((row) => row.presentBlueprints.length < scopeIds.length);
+
+  if (rows.length === 0) {
+    elements.vxlanPartialBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="4">No partial VXLAN coverage in selected scope.</td></tr>';
+    return;
+  }
+
+  elements.vxlanPartialBody.innerHTML = rows.map((row) => {
+    const readinessLabel =
+      row.presentBlueprints.length > 0 && row.missingBlueprintIds.length > 0
+        ? `Ready in planner (${numberFormat(row.missingBlueprintIds.length)} missing blueprint(s))`
+        : "No stretch targets within current scope";
+
+    return `
+      <tr>
+        <td>
+          <div class="cell-title">${escapeHtml(row.primaryLabel)}</div>
+          <div class="cell-subtle">VNI: ${escapeHtml(row.vnId || "n/a")}</div>
+        </td>
+        <td>
+          <div class="gateway-meta">
+            ${row.presentBlueprints.map((item) => `<span>${escapeHtml(item.blueprintName)}</span>`).join("")}
+          </div>
+        </td>
+        <td>
+          <div class="gateway-meta">
+            ${row.missingBlueprintIds.map((item) => `<span>${escapeHtml(getVxlanBlueprintNameById(item))}</span>`).join("")}
+          </div>
+        </td>
+        <td>
+          <div class="cell-subtle">${escapeHtml(readinessLabel)}</div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderVxlanPlannerTable() {
+  if (!appState.vxlanReport) {
+    elements.vxlanPlannerBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">Open planner after loading VXLAN report.</td></tr>';
+    return;
+  }
+
+  const rows = getScopedVxlanRows()
+    .filter((row) => row.presentBlueprints.length < getScopedBlueprintIds().length)
+    .map((row) => {
+      const sourceBlueprint = resolvePlannerSourceForRow(row);
+      const sourcePresent = Boolean(sourceBlueprint);
+      const stretchable = sourcePresent && row.missingBlueprintIds.length > 0;
+      return {
+        ...row,
+        sourceBlueprint,
+        sourcePresent,
+        stretchable
+      };
+    });
+
+  const selectedKeySet = new Set(appState.vxlanSelectedStretchKeys);
+  for (const key of selectedKeySet) {
+    const matchingRow = rows.find((row) => row.stretchKey === key);
+    if (!matchingRow || !matchingRow.stretchable) {
+      appState.vxlanSelectedStretchKeys.delete(key);
+    }
+  }
+
+  if (rows.length === 0) {
+    elements.vxlanPlannerBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">No partial VXLAN coverage in selected scope.</td></tr>';
+    return;
+  }
+
+  elements.vxlanPlannerBody.innerHTML = rows.map((row) => {
+    const checked = appState.vxlanSelectedStretchKeys.has(row.stretchKey) ? "checked" : "";
+    const disabled = row.stretchable ? "" : "disabled";
+    const stretchabilityLabel = row.stretchable
+      ? `Will stretch to ${row.missingBlueprintIds.map((id) => getVxlanBlueprintNameById(id)).join(", ")}`
+      : row.sourcePresent
+        ? "No target blueprint is missing this VXLAN"
+        : appState.vxlanSourceBlueprintId === "auto"
+          ? "No source blueprint in scope contains this VXLAN"
+          : "Preferred source blueprint does not contain this VXLAN";
+
+    const sourceLabel = row.sourceBlueprint
+      ? row.sourceBlueprint.blueprintName
+      : "n/a";
+
+    return `
+      <tr>
+        <td>
+          <div class="vxlan-select-cell">
+            <input type="checkbox" name="vxlan-select" data-stretch-key="${escapeHtml(row.stretchKey)}" ${checked} ${disabled}>
+          </div>
+        </td>
+        <td>
+          <div class="cell-title">${escapeHtml(row.primaryLabel)}</div>
+          <div class="cell-subtle">VNI: ${escapeHtml(row.vnId || "n/a")}</div>
+        </td>
+        <td>
+          <div class="cell-title">${escapeHtml(sourceLabel)}</div>
+          <div class="cell-subtle">${escapeHtml(row.presentBlueprints.map((item) => item.blueprintName).join(", ") || "n/a")}</div>
+        </td>
+        <td>
+          <div class="gateway-meta">
+            ${row.missingBlueprintIds.map((item) => `<span>${escapeHtml(getVxlanBlueprintNameById(item))}</span>`).join("")}
+          </div>
+        </td>
+        <td>
+          <div class="cell-subtle">${escapeHtml(stretchabilityLabel)}</div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  renderConnectionState();
+}
+
+function renderVxlanLastResults() {
+  const result = appState.lastVxlanStretchResult;
+  if (!result || !Array.isArray(result.results) || result.results.length === 0) {
+    elements.vxlanLastResultsBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">No stretch operation has run yet.</td></tr>';
+    return;
+  }
+
+  elements.vxlanLastResultsBody.innerHTML = result.results.map((row) => {
+    const isCreated = row.status === "created";
+    const isFailed = row.status === "failed";
+
+    const className = isCreated
+      ? "vxlan-status-created"
+      : isFailed
+        ? "vxlan-status-failed"
+        : "vxlan-status-skipped";
+
+    return `
+      <tr>
+        <td>
+          <div class="cell-title">${escapeHtml(row.vxlanLabel || "Unknown VXLAN")}</div>
+          <div class="cell-subtle">VNI: ${escapeHtml(row.vxlanVni || "n/a")}</div>
+        </td>
+        <td>
+          <div class="cell-title">${escapeHtml(row.sourceBlueprintName || row.sourceBlueprintId || "n/a")}</div>
+        </td>
+        <td>
+          <div class="cell-title">${escapeHtml(row.targetBlueprintName || row.targetBlueprintId || "(scope)")}</div>
+        </td>
+        <td>
+          <span class="vxlan-status-pill ${className}">${escapeHtml(row.status)}</span>
+        </td>
+        <td>
+          <div class="cell-subtle">${escapeHtml(row.message || "")}</div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function getVxlanBlueprintNameById(blueprintId) {
+  const blueprints = Array.isArray(appState.vxlanReport?.blueprints) ? appState.vxlanReport.blueprints : [];
+  return blueprints.find((item) => item.blueprintId === blueprintId)?.blueprintName || blueprintId;
+}
+
+function resolvePlannerSourceForRow(row) {
+  const preferredId = appState.vxlanSourceBlueprintId;
+  const present = Array.isArray(row?.presentBlueprints) ? row.presentBlueprints : [];
+
+  if (preferredId && preferredId !== "auto") {
+    return present.find((item) => item.blueprintId === preferredId) || null;
+  }
+
+  const sorted = [...present].sort((a, b) => a.blueprintName.localeCompare(b.blueprintName));
+  return sorted[0] || null;
+}
+
+function getStretchableVxlanRows() {
+  return getScopedVxlanRows()
+    .filter((row) => row.presentBlueprints.length < getScopedBlueprintIds().length)
+    .filter((row) => row.missingBlueprintIds.length > 0)
+    .filter((row) => Boolean(resolvePlannerSourceForRow(row)));
+}
+
+function selectAllStretchableVxlans() {
+  const rows = getStretchableVxlanRows();
+  appState.vxlanSelectedStretchKeys = new Set(rows.map((row) => row.stretchKey));
+  renderVxlanScopeControls();
+  renderVxlanPlannerControls();
+  renderVxlanPlannerTable();
+}
+
+async function stretchSelectedVxlans() {
+  if (appState.stretchingVxlans) {
+    return;
+  }
+
+  const scopeBlueprintIds = getScopedBlueprintIds();
+  if (scopeBlueprintIds.length < 2) {
+    showError("Select at least two blueprints in scope.", "vxlan");
+    return;
+  }
+
+  const stretchKeys = Array.from(appState.vxlanSelectedStretchKeys);
+  if (stretchKeys.length === 0) {
+    showError("Select at least one stretchable VXLAN.", "vxlan");
+    return;
+  }
+
+  appState.stretchingVxlans = true;
+  clearError("vxlan");
+  renderConnectionState();
+
+  try {
+    const result = await sendMessage("stretchVxlans", {
+      scopeBlueprintIds,
+      preferredSourceBlueprintId:
+        appState.vxlanSourceBlueprintId && appState.vxlanSourceBlueprintId !== "auto"
+          ? appState.vxlanSourceBlueprintId
+          : "",
+      stretchKeys
+    });
+
+    appState.lastVxlanStretchResult = result;
+    appState.vxlanSelectedStretchKeys.clear();
+
+    const summary =
+      `VXLAN stretch complete: ${numberFormat(result.createdCount)} created, ` +
+      `${numberFormat(result.skippedCount)} skipped, ${numberFormat(result.failedCount)} failed.`;
+
+    elements.vxlansUpdatedAt.textContent = summary;
+    if (result.failedCount > 0) {
+      showError(summary, "vxlan");
+    }
+
+    await loadVxlanReport();
+    if (appState.vxlanPlannerOpen) {
+      renderVxlanPlannerTable();
+    }
+    renderVxlanLastResults();
+  } catch (error) {
+    showError(error.message || "Unable to stretch selected VXLANs", "vxlan");
+  } finally {
+    appState.stretchingVxlans = false;
+    renderConnectionState();
+  }
+}
+
+function syncVrfSourceAndTargetsAfterScopeChange(forceInitialize = false) {
+  const blueprints = Array.isArray(appState.vrfReport?.blueprints) ? appState.vrfReport.blueprints : [];
+  if (blueprints.length === 0) {
+    appState.vrfScopeBlueprintIds.clear();
+    appState.vrfSourceBlueprintId = "auto";
+    return;
+  }
+
+  const availableIds = new Set(blueprints.map((item) => item.blueprintId));
+
+  if (forceInitialize || appState.vrfScopeBlueprintIds.size === 0) {
+    appState.vrfScopeBlueprintIds = new Set(availableIds);
+  } else {
+    appState.vrfScopeBlueprintIds = new Set(
+      Array.from(appState.vrfScopeBlueprintIds).filter((item) => availableIds.has(item))
+    );
+
+    if (appState.vrfScopeBlueprintIds.size === 0) {
+      appState.vrfScopeBlueprintIds = new Set(availableIds);
+    }
+  }
+
+  const scopedIds = Array.from(appState.vrfScopeBlueprintIds);
+
+  if (forceInitialize) {
+    appState.vrfSourceBlueprintId = "auto";
+    return;
+  }
+
+  if (appState.vrfSourceBlueprintId === "auto") {
+    return;
+  }
+
+  if (!scopedIds.includes(appState.vrfSourceBlueprintId)) {
+    appState.vrfSourceBlueprintId = "auto";
+  }
+}
+
+function renderVrfSummary() {
+  const report = appState.vrfReport;
+
+  if (!report) {
+    elements.vrfSummaryBlueprints.textContent = "-";
+    elements.vrfSummaryTotal.textContent = "-";
+    elements.vrfSummaryUnique.textContent = "-";
+    elements.vrfSummaryFull.textContent = "-";
+    elements.vrfSummaryPartial.textContent = "-";
+    return;
+  }
+
+  const scopedRows = getScopedVrfRows();
+  const fullCount = scopedRows.filter((row) => row.presentBlueprints.length === getScopedVrfBlueprintIds().length).length;
+  const partialCount = scopedRows.filter((row) => row.presentBlueprints.length < getScopedVrfBlueprintIds().length).length;
+
+  elements.vrfSummaryBlueprints.textContent = numberFormat(getScopedVrfBlueprintIds().length);
+  elements.vrfSummaryTotal.textContent = numberFormat(report.totalVrfCount);
+  elements.vrfSummaryUnique.textContent = numberFormat(scopedRows.length);
+  elements.vrfSummaryFull.textContent = numberFormat(fullCount);
+  elements.vrfSummaryPartial.textContent = numberFormat(partialCount);
+}
+
+function renderVrfLoading() {
+  elements.vrfBlueprintCompatibilityBody.innerHTML =
+    '<tr class="placeholder-row"><td colspan="4">Loading blueprint compatibility...</td></tr>';
+  elements.vrfFullBody.innerHTML =
+    '<tr class="placeholder-row"><td colspan="3">Loading VRF coverage...</td></tr>';
+  elements.vrfPartialBody.innerHTML =
+    '<tr class="placeholder-row"><td colspan="4">Loading stretch candidates...</td></tr>';
+  elements.vrfPlannerBody.innerHTML =
+    '<tr class="placeholder-row"><td colspan="5">Loading planner candidates...</td></tr>';
+}
+
+function renderVrfScopeControls() {
+  const blueprints = Array.isArray(appState.vrfReport?.blueprints) ? appState.vrfReport.blueprints : [];
+
+  if (blueprints.length === 0) {
+    elements.vrfScopeList.innerHTML = '<p class="cell-subtle">Run refresh to load blueprints.</p>';
+    elements.vrfSelectionStatus.textContent = "Select scope, then open planner.";
+    elements.vrfPlannerSelectionStatus.textContent = "No VRF selected.";
+    return;
+  }
+
+  const scopedBlueprintIds = getScopedVrfBlueprintIds();
+  const sortedBlueprints = [...blueprints].sort((a, b) => a.blueprintName.localeCompare(b.blueprintName));
+
+  elements.vrfScopeList.innerHTML = sortedBlueprints.map((blueprint) => {
+    const checked = appState.vrfScopeBlueprintIds.has(blueprint.blueprintId) ? "checked" : "";
+    return `
+      <label class="vxlan-checkbox-item">
+        <input type="checkbox" name="vrf-scope" value="${escapeHtml(blueprint.blueprintId)}" ${checked}>
+        <span class="meta">
+          <strong>${escapeHtml(blueprint.blueprintName)}</strong>
+          <span>${numberFormat(blueprint.vrfCount)} VRFs</span>
+        </span>
+      </label>
+    `;
+  }).join("");
+
+  const scopeCount = scopedBlueprintIds.length;
+  const selectedCount = appState.vrfSelectedStretchKeys.size;
+  elements.vrfSelectionStatus.textContent =
+    `Scope: ${numberFormat(scopeCount)} blueprint(s) | Planner selected: ${numberFormat(selectedCount)} VRF(s)`;
+}
+
+function renderVrfPlannerControls() {
+  const blueprints = Array.isArray(appState.vrfReport?.blueprints) ? appState.vrfReport.blueprints : [];
+  if (blueprints.length === 0) {
+    elements.vrfSourceBlueprint.innerHTML = '<option value="">No source blueprint</option>';
+    elements.vrfPlannerSelectionStatus.textContent = "No VRF selected.";
+    return;
+  }
+
+  const scopedBlueprintIds = getScopedVrfBlueprintIds();
+
+  const optionRows = [
+    '<option value="auto">Auto-select source per VRF</option>',
+    ...scopedBlueprintIds.map((blueprintId) => {
+      const blueprintName = getVrfBlueprintNameById(blueprintId);
+      const selected = appState.vrfSourceBlueprintId === blueprintId ? "selected" : "";
+      return `<option value="${escapeHtml(blueprintId)}" ${selected}>Prefer ${escapeHtml(blueprintName)}</option>`;
+    })
+  ];
+
+  if (
+    appState.vrfSourceBlueprintId !== "auto" &&
+    !scopedBlueprintIds.includes(appState.vrfSourceBlueprintId)
+  ) {
+    appState.vrfSourceBlueprintId = "auto";
+  }
+
+  elements.vrfSourceBlueprint.innerHTML = optionRows.join("");
+  elements.vrfSourceBlueprint.value = appState.vrfSourceBlueprintId || "auto";
+
+  const selectedCount = appState.vrfSelectedStretchKeys.size;
+  const candidateCount = getStretchableVrfRows().length;
+  elements.vrfPlannerSelectionStatus.textContent =
+    `${numberFormat(selectedCount)} selected | ${numberFormat(candidateCount)} stretchable candidate(s) in scope`;
+}
+
+function renderVrfBlueprintCompatibilityTable() {
+  if (!appState.vrfReport) {
+    elements.vrfBlueprintCompatibilityBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="4">Run refresh, then select scope blueprints.</td></tr>';
+    return;
+  }
+
+  const scopeIds = getScopedVrfBlueprintIds();
+  if (scopeIds.length === 0) {
+    elements.vrfBlueprintCompatibilityBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="4">Select at least one blueprint scope.</td></tr>';
+    return;
+  }
+
+  const scopedRows = getScopedVrfRows();
+
+  const byBlueprint = new Map(
+    scopeIds.map((blueprintId) => [
+      blueprintId,
+      {
+        blueprintId,
+        blueprintName: getVrfBlueprintNameById(blueprintId),
+        stretchTo: new Set(),
+        receiveFrom: new Set(),
+        sourceCandidateCount: 0,
+        receiveCandidateCount: 0
+      }
+    ])
+  );
+
+  for (const row of scopedRows) {
+    const presentIds = row.presentBlueprints.map((item) => item.blueprintId);
+    const missingIds = row.missingBlueprintIds || [];
+
+    if (missingIds.length === 0) {
+      continue;
+    }
+
+    for (const sourceId of presentIds) {
+      const source = byBlueprint.get(sourceId);
+      if (!source) {
+        continue;
+      }
+
+      source.sourceCandidateCount += 1;
+      for (const targetId of missingIds) {
+        source.stretchTo.add(targetId);
+      }
+    }
+
+    for (const targetId of missingIds) {
+      const target = byBlueprint.get(targetId);
+      if (!target) {
+        continue;
+      }
+
+      target.receiveCandidateCount += 1;
+      for (const sourceId of presentIds) {
+        target.receiveFrom.add(sourceId);
+      }
+    }
+  }
+
+  const rows = Array.from(byBlueprint.values()).sort((a, b) => a.blueprintName.localeCompare(b.blueprintName));
+  elements.vrfBlueprintCompatibilityBody.innerHTML = rows.map((row) => {
+    const canStretchTo = Array.from(row.stretchTo).map((id) => getVrfBlueprintNameById(id)).sort((a, b) => a.localeCompare(b));
+    const canReceiveFrom = Array.from(row.receiveFrom).map((id) => getVrfBlueprintNameById(id)).sort((a, b) => a.localeCompare(b));
+
+    const notes = row.sourceCandidateCount === 0 && row.receiveCandidateCount === 0
+      ? "Fully aligned in selected scope"
+      : `${numberFormat(row.sourceCandidateCount)} source candidate(s), ${numberFormat(row.receiveCandidateCount)} receive candidate(s)`;
+
+    return `
+      <tr>
+        <td>
+          <div class="cell-title">${escapeHtml(row.blueprintName)}</div>
+          <div class="cell-subtle gateway-mono">${escapeHtml(row.blueprintId)}</div>
+        </td>
+        <td>
+          <div class="gateway-meta">
+            ${canStretchTo.length > 0 ? canStretchTo.map((name) => `<span>${escapeHtml(name)}</span>`).join("") : '<span>None</span>'}
+          </div>
+        </td>
+        <td>
+          <div class="gateway-meta">
+            ${canReceiveFrom.length > 0 ? canReceiveFrom.map((name) => `<span>${escapeHtml(name)}</span>`).join("") : '<span>None</span>'}
+          </div>
+        </td>
+        <td>
+          <div class="cell-subtle">${escapeHtml(notes)}</div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderVrfTables() {
+  renderVrfScopeControls();
+  renderVrfPlannerControls();
+  renderVrfBlueprintCompatibilityTable();
+  renderVrfFullTable();
+  renderVrfPartialTable();
+  renderVrfPlannerTable();
+  renderVrfLastResults();
+}
+
+function getScopedVrfBlueprintIds() {
+  if (!appState.vrfReport) {
+    return [];
+  }
+
+  const reportBlueprintIds = (appState.vrfReport.blueprints || []).map((item) => item.blueprintId);
+
+  if (appState.vrfScopeBlueprintIds.size === 0) {
+    return reportBlueprintIds;
+  }
+
+  return reportBlueprintIds.filter((item) => appState.vrfScopeBlueprintIds.has(item));
+}
+
+function getScopedVrfRows() {
+  const rows = Array.isArray(appState.vrfReport?.rows) ? appState.vrfReport.rows : [];
+  const scopeIds = getScopedVrfBlueprintIds();
+  if (scopeIds.length === 0) {
+    return [];
+  }
+
+  return rows
+    .map((row) => {
+      const presentBlueprints = (row.presentBlueprints || []).filter((item) => scopeIds.includes(item.blueprintId));
+      const missingBlueprintIds = scopeIds.filter((item) => !presentBlueprints.some((entry) => entry.blueprintId === item));
+      return {
+        ...row,
+        presentBlueprints,
+        missingBlueprintIds
+      };
+    })
+    .filter((row) => row.presentBlueprints.length > 0);
+}
+
+function renderVrfFullTable() {
+  if (!appState.vrfReport) {
+    elements.vrfFullBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="3">Run refresh to compare VRF presence.</td></tr>';
+    return;
+  }
+
+  const scopeIds = getScopedVrfBlueprintIds();
+  const rows = getScopedVrfRows().filter((row) => row.presentBlueprints.length === scopeIds.length);
+
+  if (rows.length === 0) {
+    elements.vrfFullBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="3">No VRF is present across all selected blueprints.</td></tr>';
+    return;
+  }
+
+  elements.vrfFullBody.innerHTML = rows.map((row) => `
+    <tr>
+      <td>
+        <div class="cell-title">${escapeHtml(row.primaryLabel)}</div>
+        <div class="cell-subtle">Key: ${escapeHtml(row.stretchKey)}</div>
+      </td>
+      <td>
+        <div class="gateway-meta">
+          <span>VRF Names: ${escapeHtml((row.vrfNames || []).join(", ") || "n/a")}</span>
+          <span>Types: ${escapeHtml((row.vrfTypes || []).join(", ") || "n/a")}</span>
+        </div>
+      </td>
+      <td>
+        <div class="gateway-meta">
+          ${row.presentBlueprints.map((item) => `<span>${escapeHtml(item.blueprintName)}</span>`).join("")}
+        </div>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function renderVrfPartialTable() {
+  if (!appState.vrfReport) {
+    elements.vrfPartialBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="4">Run refresh to find stretch candidates.</td></tr>';
+    return;
+  }
+
+  const scopeIds = getScopedVrfBlueprintIds();
+  const rows = getScopedVrfRows()
+    .filter((row) => row.presentBlueprints.length < scopeIds.length);
+
+  if (rows.length === 0) {
+    elements.vrfPartialBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="4">No partial VRF coverage in selected scope.</td></tr>';
+    return;
+  }
+
+  elements.vrfPartialBody.innerHTML = rows.map((row) => {
+    const readinessLabel =
+      row.presentBlueprints.length > 0 && row.missingBlueprintIds.length > 0
+        ? `Ready in planner (${numberFormat(row.missingBlueprintIds.length)} missing blueprint(s))`
+        : "No stretch targets within current scope";
+
+    return `
+      <tr>
+        <td>
+          <div class="cell-title">${escapeHtml(row.primaryLabel)}</div>
+          <div class="cell-subtle">VRF Name: ${escapeHtml((row.vrfNames || [])[0] || "n/a")}</div>
+        </td>
+        <td>
+          <div class="gateway-meta">
+            ${row.presentBlueprints.map((item) => `<span>${escapeHtml(item.blueprintName)}</span>`).join("")}
+          </div>
+        </td>
+        <td>
+          <div class="gateway-meta">
+            ${row.missingBlueprintIds.map((item) => `<span>${escapeHtml(getVrfBlueprintNameById(item))}</span>`).join("")}
+          </div>
+        </td>
+        <td>
+          <div class="cell-subtle">${escapeHtml(readinessLabel)}</div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderVrfPlannerTable() {
+  if (!appState.vrfReport) {
+    elements.vrfPlannerBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">Open planner after loading VRF report.</td></tr>';
+    return;
+  }
+
+  const rows = getScopedVrfRows()
+    .filter((row) => row.presentBlueprints.length < getScopedVrfBlueprintIds().length)
+    .map((row) => {
+      const sourceBlueprint = resolvePlannerSourceForVrfRow(row);
+      const sourcePresent = Boolean(sourceBlueprint);
+      const stretchable = sourcePresent && row.missingBlueprintIds.length > 0;
+      return {
+        ...row,
+        sourceBlueprint,
+        sourcePresent,
+        stretchable
+      };
+    });
+
+  const selectedKeySet = new Set(appState.vrfSelectedStretchKeys);
+  for (const key of selectedKeySet) {
+    const matchingRow = rows.find((row) => row.stretchKey === key);
+    if (!matchingRow || !matchingRow.stretchable) {
+      appState.vrfSelectedStretchKeys.delete(key);
+    }
+  }
+
+  if (rows.length === 0) {
+    elements.vrfPlannerBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">No partial VRF coverage in selected scope.</td></tr>';
+    return;
+  }
+
+  elements.vrfPlannerBody.innerHTML = rows.map((row) => {
+    const checked = appState.vrfSelectedStretchKeys.has(row.stretchKey) ? "checked" : "";
+    const disabled = row.stretchable ? "" : "disabled";
+    const stretchabilityLabel = row.stretchable
+      ? `Will stretch to ${row.missingBlueprintIds.map((id) => getVrfBlueprintNameById(id)).join(", ")}`
+      : row.sourcePresent
+        ? "No target blueprint is missing this VRF"
+        : appState.vrfSourceBlueprintId === "auto"
+          ? "No source blueprint in scope contains this VRF"
+          : "Preferred source blueprint does not contain this VRF";
+
+    const sourceLabel = row.sourceBlueprint
+      ? row.sourceBlueprint.blueprintName
+      : "n/a";
+
+    return `
+      <tr>
+        <td>
+          <div class="vxlan-select-cell">
+            <input type="checkbox" name="vrf-select" data-stretch-key="${escapeHtml(row.stretchKey)}" ${checked} ${disabled}>
+          </div>
+        </td>
+        <td>
+          <div class="cell-title">${escapeHtml(row.primaryLabel)}</div>
+          <div class="cell-subtle">VRF Name: ${escapeHtml((row.vrfNames || [])[0] || "n/a")}</div>
+        </td>
+        <td>
+          <div class="cell-title">${escapeHtml(sourceLabel)}</div>
+          <div class="cell-subtle">${escapeHtml(row.presentBlueprints.map((item) => item.blueprintName).join(", ") || "n/a")}</div>
+        </td>
+        <td>
+          <div class="gateway-meta">
+            ${row.missingBlueprintIds.map((item) => `<span>${escapeHtml(getVrfBlueprintNameById(item))}</span>`).join("")}
+          </div>
+        </td>
+        <td>
+          <div class="cell-subtle">${escapeHtml(stretchabilityLabel)}</div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  renderConnectionState();
+}
+
+function renderVrfLastResults() {
+  const result = appState.lastVrfStretchResult;
+  if (!result || !Array.isArray(result.results) || result.results.length === 0) {
+    elements.vrfLastResultsBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">No stretch operation has run yet.</td></tr>';
+    return;
+  }
+
+  elements.vrfLastResultsBody.innerHTML = result.results.map((row) => {
+    const isCreated = row.status === "created";
+    const isFailed = row.status === "failed";
+
+    const className = isCreated
+      ? "vxlan-status-created"
+      : isFailed
+        ? "vxlan-status-failed"
+        : "vxlan-status-skipped";
+
+    return `
+      <tr>
+        <td>
+          <div class="cell-title">${escapeHtml(row.vrfLabel || "Unknown VRF")}</div>
+          <div class="cell-subtle">Key: ${escapeHtml(row.stretchKey || "n/a")}</div>
+        </td>
+        <td>
+          <div class="cell-title">${escapeHtml(row.sourceBlueprintName || row.sourceBlueprintId || "n/a")}</div>
+        </td>
+        <td>
+          <div class="cell-title">${escapeHtml(row.targetBlueprintName || row.targetBlueprintId || "(scope)")}</div>
+        </td>
+        <td>
+          <span class="vxlan-status-pill ${className}">${escapeHtml(row.status)}</span>
+        </td>
+        <td>
+          <div class="cell-subtle">${escapeHtml(row.message || "")}</div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function getVrfBlueprintNameById(blueprintId) {
+  const blueprints = Array.isArray(appState.vrfReport?.blueprints) ? appState.vrfReport.blueprints : [];
+  return blueprints.find((item) => item.blueprintId === blueprintId)?.blueprintName || blueprintId;
+}
+
+function resolvePlannerSourceForVrfRow(row) {
+  const preferredId = appState.vrfSourceBlueprintId;
+  const present = Array.isArray(row?.presentBlueprints) ? row.presentBlueprints : [];
+
+  if (preferredId && preferredId !== "auto") {
+    return present.find((item) => item.blueprintId === preferredId) || null;
+  }
+
+  const sorted = [...present].sort((a, b) => a.blueprintName.localeCompare(b.blueprintName));
+  return sorted[0] || null;
+}
+
+function getStretchableVrfRows() {
+  return getScopedVrfRows()
+    .filter((row) => row.presentBlueprints.length < getScopedVrfBlueprintIds().length)
+    .filter((row) => row.missingBlueprintIds.length > 0)
+    .filter((row) => Boolean(resolvePlannerSourceForVrfRow(row)));
+}
+
+function selectAllStretchableVrfs() {
+  const rows = getStretchableVrfRows();
+  appState.vrfSelectedStretchKeys = new Set(rows.map((row) => row.stretchKey));
+  renderVrfScopeControls();
+  renderVrfPlannerControls();
+  renderVrfPlannerTable();
+}
+
+async function stretchSelectedVrfs() {
+  if (appState.stretchingVrfs) {
+    return;
+  }
+
+  const scopeBlueprintIds = getScopedVrfBlueprintIds();
+  if (scopeBlueprintIds.length < 2) {
+    showError("Select at least two blueprints in scope.", "vrf");
+    return;
+  }
+
+  const stretchKeys = Array.from(appState.vrfSelectedStretchKeys);
+  if (stretchKeys.length === 0) {
+    showError("Select at least one stretchable VRF.", "vrf");
+    return;
+  }
+
+  appState.stretchingVrfs = true;
+  clearError("vrf");
+  renderConnectionState();
+
+  try {
+    const result = await sendMessage("stretchVrfs", {
+      scopeBlueprintIds,
+      preferredSourceBlueprintId:
+        appState.vrfSourceBlueprintId && appState.vrfSourceBlueprintId !== "auto"
+          ? appState.vrfSourceBlueprintId
+          : "",
+      stretchKeys
+    });
+
+    appState.lastVrfStretchResult = result;
+    appState.vrfSelectedStretchKeys.clear();
+
+    const summary =
+      `VRF stretch complete: ${numberFormat(result.createdCount)} created, ` +
+      `${numberFormat(result.skippedCount)} skipped, ${numberFormat(result.failedCount)} failed.`;
+
+    elements.vrfsUpdatedAt.textContent = summary;
+    if (result.failedCount > 0) {
+      showError(summary, "vrf");
+    }
+
+    await loadVrfReport();
+    if (appState.vrfPlannerOpen) {
+      renderVrfPlannerTable();
+    }
+    renderVrfLastResults();
+  } catch (error) {
+    showError(error.message || "Unable to stretch selected VRFs", "vrf");
+  } finally {
+    appState.stretchingVrfs = false;
+    renderConnectionState();
+  }
+}
+
 async function refreshOutOfSyncEntry({ blueprintId, configletId, configletName, entryKey }) {
   if (appState.refreshingEntryKey) {
     return;
@@ -541,16 +2114,46 @@ function renderConnectionState() {
   const authReady = isAuthReady();
   elements.openConfigletsBtn.disabled = !authReady;
   elements.openGatewaysBtn.disabled = !authReady;
+  elements.openVxlansBtn.disabled = !authReady;
+  elements.openVrfsBtn.disabled = !authReady;
   elements.navConfiglets.disabled = !authReady;
   elements.navGateways.disabled = !authReady;
+  elements.navVxlans.disabled = !authReady;
+  elements.navVrfs.disabled = !authReady;
 
   elements.refreshButton.disabled = appState.loadingStatus;
   elements.trafficButton.disabled = !connection || connection.state === "NOT_ON_DCD_TAB";
   elements.loadButton.disabled = !authReady || appState.loadingReport;
   elements.loadGatewaysButton.disabled = !authReady || appState.loadingGatewayReport;
+  elements.loadVxlansButton.disabled = !authReady || appState.loadingVxlanReport;
+  elements.loadVrfsButton.disabled = !authReady || appState.loadingVrfReport;
+  elements.openVxlanPlannerButton.disabled =
+    !authReady ||
+    !appState.vxlanReport ||
+    appState.loadingVxlanReport ||
+    getScopedBlueprintIds().length < 2;
+  elements.openVrfPlannerButton.disabled =
+    !authReady ||
+    !appState.vrfReport ||
+    appState.loadingVrfReport ||
+    getScopedVrfBlueprintIds().length < 2;
+  elements.vxlanSelectStretchableButton.disabled = !authReady || !appState.vxlanReport;
+  elements.vxlanClearSelectionButton.disabled = !authReady || appState.vxlanSelectedStretchKeys.size === 0;
+  elements.vxlanStretchSelectedButton.disabled =
+    !authReady ||
+    appState.stretchingVxlans ||
+    appState.vxlanSelectedStretchKeys.size === 0 ||
+    getScopedBlueprintIds().length < 2;
+  elements.vrfSelectStretchableButton.disabled = !authReady || !appState.vrfReport;
+  elements.vrfClearSelectionButton.disabled = !authReady || appState.vrfSelectedStretchKeys.size === 0;
+  elements.vrfStretchSelectedButton.disabled =
+    !authReady ||
+    appState.stretchingVrfs ||
+    appState.vrfSelectedStretchKeys.size === 0 ||
+    getScopedVrfBlueprintIds().length < 2;
 
   elements.homeHint.textContent = authReady
-    ? "Ready. Select Configlet Audit or Gateway Links to run reports."
+    ? "Ready. Select Configlet Audit, Gateway Links, VXLAN Stretch, or VRF Stretch to run reports."
     : "Capture token/auth headers first. Keep the Data Center Director tab active and click Refresh Token Capture.";
 }
 
@@ -1508,6 +3111,56 @@ function closeActiveDetails() {
   elements.activeDetailsBody.innerHTML = "";
 }
 
+function openVxlanPlanner() {
+  if (!appState.vxlanReport) {
+    showError("Load the VXLAN report first.", "vxlan");
+    return;
+  }
+
+  const scopedBlueprintIds = getScopedBlueprintIds();
+  if (scopedBlueprintIds.length < 2) {
+    showError("Select at least two blueprints in scope before opening planner.", "vxlan");
+    return;
+  }
+
+  appState.vxlanPlannerOpen = true;
+  elements.vxlanPlannerModal.classList.remove("hidden");
+  renderVxlanPlannerControls();
+  renderVxlanPlannerTable();
+  renderConnectionState();
+}
+
+function closeVxlanPlanner() {
+  appState.vxlanPlannerOpen = false;
+  elements.vxlanPlannerModal.classList.add("hidden");
+  renderConnectionState();
+}
+
+function openVrfPlanner() {
+  if (!appState.vrfReport) {
+    showError("Load the VRF report first.", "vrf");
+    return;
+  }
+
+  const scopedBlueprintIds = getScopedVrfBlueprintIds();
+  if (scopedBlueprintIds.length < 2) {
+    showError("Select at least two blueprints in scope before opening planner.", "vrf");
+    return;
+  }
+
+  appState.vrfPlannerOpen = true;
+  elements.vrfPlannerModal.classList.remove("hidden");
+  renderVrfPlannerControls();
+  renderVrfPlannerTable();
+  renderConnectionState();
+}
+
+function closeVrfPlanner() {
+  appState.vrfPlannerOpen = false;
+  elements.vrfPlannerModal.classList.add("hidden");
+  renderConnectionState();
+}
+
 function rerenderActiveDetailsModal() {
   if (elements.activeDetailsModal.classList.contains("hidden")) {
     return;
@@ -1947,6 +3600,10 @@ function showError(message, scope) {
       ? elements.homeErrorBanner
       : scope === "gateway"
         ? elements.gatewaysErrorBanner
+        : scope === "vxlan"
+          ? elements.vxlansErrorBanner
+          : scope === "vrf"
+            ? elements.vrfsErrorBanner
         : elements.errorBanner;
   target.textContent = message;
   target.classList.remove("hidden");
@@ -1966,6 +3623,16 @@ function clearError(scope) {
   if (scope === "gateway" || !scope) {
     elements.gatewaysErrorBanner.textContent = "";
     elements.gatewaysErrorBanner.classList.add("hidden");
+  }
+
+  if (scope === "vxlan" || !scope) {
+    elements.vxlansErrorBanner.textContent = "";
+    elements.vxlansErrorBanner.classList.add("hidden");
+  }
+
+  if (scope === "vrf" || !scope) {
+    elements.vrfsErrorBanner.textContent = "";
+    elements.vrfsErrorBanner.classList.add("hidden");
   }
 }
 
@@ -2001,7 +3668,7 @@ async function sendMessage(type, payload = {}) {
         // If popup JS is newer than the active service worker, MV3 can return
         // Unsupported request until the extension is reloaded.
         if (rawErrorMessage === "Unsupported request") {
-          reject(new Error("Gateway Links requires a full extension reload so the background service worker picks up the new handler."));
+          reject(new Error("This feature requires a full extension reload so the background service worker picks up the new handler."));
           return;
         }
 

@@ -625,6 +625,124 @@ tbody tr.details-row:hover {
   font-size: 12px;
 }
 
+.vxlan-controls-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.vxlan-control-block {
+  display: grid;
+  gap: 6px;
+}
+
+.vxlan-control-block h3 {
+  margin: 0;
+  font-size: 13px;
+  color: #26445f;
+}
+
+.vxlan-control-block label {
+  font-size: 12px;
+  color: #526a82;
+  font-weight: 600;
+}
+
+.vxlan-control-block select {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #ffffff;
+  padding: 7px 9px;
+  font-size: 13px;
+}
+
+.vxlan-checkbox-grid {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.vxlan-checkbox-item {
+  border: 1px solid #d4e2f0;
+  border-radius: 10px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #fbfdff;
+}
+
+.vxlan-checkbox-item input {
+  margin-top: 2px;
+}
+
+.vxlan-checkbox-item .meta {
+  display: grid;
+  gap: 2px;
+}
+
+.vxlan-checkbox-item .meta strong {
+  font-size: 12px;
+  color: #1f3d59;
+}
+
+.vxlan-checkbox-item .meta span {
+  font-size: 11px;
+  color: #607487;
+}
+
+.vxlan-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.vxlan-planner-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.vxlan-planner-modal {
+  width: min(980px, 100%);
+}
+
+.vxlan-status-pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.vxlan-status-created {
+  background: #dff7e8;
+  color: #0f5f36;
+}
+
+.vxlan-status-skipped {
+  background: #edf3fa;
+  color: #355772;
+}
+
+.vxlan-status-failed {
+  background: #ffe7e7;
+  color: #9a2d2d;
+}
+
+.vxlan-select-cell {
+  display: flex;
+  justify-content: center;
+}
+
+.vxlan-select-cell input {
+  width: 16px;
+  height: 16px;
+}
+
 .gateway-diagram-svg {
   width: 100%;
   height: auto;

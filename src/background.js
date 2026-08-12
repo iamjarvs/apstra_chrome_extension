@@ -3,6 +3,8 @@ const TOKEN_STORE_KEY = "tokensByOrigin";
 const PROBE_TTL_MS = 30_000;
 const DEFAULT_PAGE_SIZE = 200;
 const MAX_PAGINATION_PAGES = 25;
+const VIRTUAL_NETWORKS_PATH_SUFFIX = "virtual-networks";
+const SECURITY_ZONES_PATH_SUFFIX = "security-zones";
 
 const tokenCache = new Map();
 const probeCache = new Map();
@@ -78,6 +80,8 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     }
   };
 
+  const timeoutMs = getRequestTimeoutMs(request?.type);
+
   timeoutId = setTimeout(() => {
     safeRespond({
       ok: false,
@@ -86,7 +90,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         code: "BACKGROUND_TIMEOUT"
       }
     });
-  }, 8_000);
+  }, timeoutMs);
 
   void handleMessage(request)
     .then((data) => safeRespond({ ok: true, data }))
@@ -117,6 +121,14 @@ async function handleMessage(request) {
       return runConfigletsReport();
     case "runGatewayConnectionsReport":
       return runGatewayConnectionsReport();
+    case "runVxlanStretchReport":
+      return runVxlanStretchReport();
+    case "stretchVxlans":
+      return stretchVxlans(request);
+    case "runVrfStretchReport":
+      return runVrfStretchReport();
+    case "stretchVrfs":
+      return stretchVrfs(request);
     case "refreshConfigletFromGlobal":
       return refreshConfigletFromGlobal(request);
     case "refreshActiveTabTraffic":
@@ -124,6 +136,26 @@ async function handleMessage(request) {
     default:
       throw createError("Unsupported request", "BAD_REQUEST");
   }
+}
+
+function getRequestTimeoutMs(type) {
+  if (type === "stretchVxlans") {
+    return 50_000;
+  }
+
+  if (type === "runVxlanStretchReport") {
+    return 20_000;
+  }
+
+  if (type === "stretchVrfs") {
+    return 50_000;
+  }
+
+  if (type === "runVrfStretchReport") {
+    return 20_000;
+  }
+
+  return 8_000;
 }
 
 async function hydrateTokenCache() {
@@ -468,6 +500,582 @@ async function runGatewayConnectionsReport() {
   return {
     connection,
     report
+  };
+}
+
+async function runVxlanStretchReport() {
+  const connection = await getConnectionStatus();
+
+  if (connection.state === "NOT_ON_DCD_TAB") {
+    throw createError("Open a Data Center Director tab first.", "NOT_ON_DCD_TAB");
+  }
+
+  if (connection.state === "WAITING_FOR_TOKEN") {
+    throw createError(
+      "Token/auth headers not captured yet. Generate API traffic, then Refresh Status.",
+      "TOKEN_MISSING"
+    );
+  }
+
+  if (connection.state !== "READY") {
+    throw createError("Connection is not ready.", "NOT_READY");
+  }
+
+  const tokenInfo = tokenCache.get(connection.origin) || {};
+  const token = tokenInfo.token || null;
+  const authHeaders = sanitizeCapturedHeaders(tokenInfo.authHeaders || {});
+
+  const report = await fetchVxlanStretchReport(connection, token, authHeaders);
+
+  return {
+    connection,
+    report
+  };
+}
+
+async function runVrfStretchReport() {
+  const connection = await getConnectionStatus();
+
+  if (connection.state === "NOT_ON_DCD_TAB") {
+    throw createError("Open a Data Center Director tab first.", "NOT_ON_DCD_TAB");
+  }
+
+  if (connection.state === "WAITING_FOR_TOKEN") {
+    throw createError(
+      "Token/auth headers not captured yet. Generate API traffic, then Refresh Status.",
+      "TOKEN_MISSING"
+    );
+  }
+
+  if (connection.state !== "READY") {
+    throw createError("Connection is not ready.", "NOT_READY");
+  }
+
+  const tokenInfo = tokenCache.get(connection.origin) || {};
+  const token = tokenInfo.token || null;
+  const authHeaders = sanitizeCapturedHeaders(tokenInfo.authHeaders || {});
+
+  const report = await fetchVrfStretchReport(connection, token, authHeaders);
+
+  return {
+    connection,
+    report
+  };
+}
+
+async function stretchVxlans(request) {
+  const connection = await getConnectionStatus();
+
+  if (connection.state === "NOT_ON_DCD_TAB") {
+    throw createError("Open a Data Center Director tab first.", "NOT_ON_DCD_TAB");
+  }
+
+  if (connection.state === "WAITING_FOR_TOKEN") {
+    throw createError(
+      "Token/auth headers not captured yet. Generate API traffic, then Refresh Status.",
+      "TOKEN_MISSING"
+    );
+  }
+
+  if (connection.state !== "READY") {
+    throw createError("Connection is not ready.", "NOT_READY");
+  }
+
+  const sourceBlueprintId = asString(request?.sourceBlueprintId).trim();
+  const targetBlueprintIds = dedupeStrings(
+    Array.isArray(request?.targetBlueprintIds)
+      ? request.targetBlueprintIds.map((item) => asString(item).trim()).filter(Boolean)
+      : []
+  );
+  const scopeBlueprintIds = dedupeStrings(
+    Array.isArray(request?.scopeBlueprintIds)
+      ? request.scopeBlueprintIds.map((item) => asString(item).trim()).filter(Boolean)
+      : []
+  );
+  const preferredSourceBlueprintId = asString(request?.preferredSourceBlueprintId).trim();
+  const stretchKeys = dedupeStrings(
+    Array.isArray(request?.stretchKeys)
+      ? request.stretchKeys.map((item) => asString(item).trim()).filter(Boolean)
+      : []
+  );
+
+  if (stretchKeys.length === 0) {
+    throw createError("Select at least one VXLAN to stretch", "BAD_REQUEST");
+  }
+
+  const tokenInfo = tokenCache.get(connection.origin) || {};
+  const token = tokenInfo.token || null;
+  const authHeaders = sanitizeCapturedHeaders(tokenInfo.authHeaders || {});
+
+  const facts = await fetchBlueprintVxlanFacts(connection, token, authHeaders);
+  const blueprintMap = new Map(facts.blueprintRows.map((item) => [item.blueprintId, item]));
+
+  const plans = [];
+
+  if (scopeBlueprintIds.length > 0) {
+    if (scopeBlueprintIds.length < 2) {
+      throw createError("At least two scope blueprints are required", "BAD_REQUEST");
+    }
+
+    const invalidScope = scopeBlueprintIds.filter((item) => !blueprintMap.has(item));
+    if (invalidScope.length > 0) {
+      throw createError(`Unknown scope blueprint id(s): ${invalidScope.join(", ")}`, "BAD_REQUEST");
+    }
+
+    for (const stretchKey of stretchKeys) {
+      const sourceCandidates = scopeBlueprintIds.filter((blueprintId) => {
+        const blueprint = blueprintMap.get(blueprintId);
+        return Boolean(blueprint?.vxlanByStretchKey.has(stretchKey));
+      });
+
+      const targets = scopeBlueprintIds.filter((blueprintId) => {
+        const blueprint = blueprintMap.get(blueprintId);
+        return !blueprint?.vxlanByStretchKey.has(stretchKey);
+      });
+
+      const selectedSourceBlueprintId = choosePreferredScopeSourceBlueprintId(
+        sourceCandidates,
+        preferredSourceBlueprintId,
+        blueprintMap
+      );
+
+      plans.push({
+        stretchKey,
+        sourceBlueprintId: selectedSourceBlueprintId,
+        targetBlueprintIds: targets,
+        mode: "scope"
+      });
+    }
+  } else {
+    if (!sourceBlueprintId) {
+      throw createError("sourceBlueprintId is required", "BAD_REQUEST");
+    }
+
+    if (targetBlueprintIds.length === 0) {
+      throw createError("At least one target blueprint is required", "BAD_REQUEST");
+    }
+
+    const sourceBlueprint = blueprintMap.get(sourceBlueprintId);
+    if (!sourceBlueprint) {
+      throw createError(`Source blueprint ${sourceBlueprintId} not found`, "BAD_REQUEST");
+    }
+
+    const invalidTargets = targetBlueprintIds.filter((targetId) => !blueprintMap.has(targetId));
+    if (invalidTargets.length > 0) {
+      throw createError(`Unknown target blueprint id(s): ${invalidTargets.join(", ")}`, "BAD_REQUEST");
+    }
+
+    for (const stretchKey of stretchKeys) {
+      plans.push({
+        stretchKey,
+        sourceBlueprintId,
+        targetBlueprintIds,
+        mode: "legacy"
+      });
+    }
+  }
+
+  const results = [];
+
+  for (const plan of plans) {
+    const stretchKey = plan.stretchKey;
+    const sourceBlueprint = plan.sourceBlueprintId
+      ? blueprintMap.get(plan.sourceBlueprintId)
+      : null;
+
+    const sourceVxlan = sourceBlueprint?.vxlanByStretchKey.get(stretchKey) || null;
+
+    if (!sourceVxlan) {
+      for (const targetBlueprintId of plan.targetBlueprintIds) {
+        const targetBlueprint = blueprintMap.get(targetBlueprintId);
+        results.push({
+          stretchKey,
+          vxlanLabel: "Unknown VXLAN",
+          vxlanVni: "",
+          sourceBlueprintId: plan.sourceBlueprintId || "",
+          sourceBlueprintName: sourceBlueprint?.blueprintName || "(auto)",
+          targetBlueprintId,
+          targetBlueprintName: targetBlueprint?.blueprintName || targetBlueprintId,
+          status: "skipped_source_missing",
+          message: plan.mode === "scope"
+            ? "VXLAN is not present in any source blueprint within selected scope"
+            : "VXLAN not present in source blueprint"
+        });
+      }
+
+      continue;
+    }
+
+    if (plan.targetBlueprintIds.length === 0 && plan.mode === "scope") {
+      results.push({
+        stretchKey,
+        vxlanLabel: sourceVxlan.label,
+        vxlanVni: sourceVxlan.vnId,
+        sourceBlueprintId: sourceBlueprint.blueprintId,
+        sourceBlueprintName: sourceBlueprint.blueprintName,
+        targetBlueprintId: "",
+        targetBlueprintName: "",
+        status: "skipped_exists",
+        message: "VXLAN already exists in all selected scope blueprints"
+      });
+      continue;
+    }
+
+    for (const targetBlueprintId of plan.targetBlueprintIds) {
+      const targetBlueprint = blueprintMap.get(targetBlueprintId);
+
+      if (!targetBlueprint || targetBlueprintId === sourceBlueprint.blueprintId) {
+        continue;
+      }
+
+      if (targetBlueprint.vxlanByStretchKey.has(stretchKey)) {
+        results.push({
+          stretchKey,
+          vxlanLabel: sourceVxlan.label,
+          vxlanVni: sourceVxlan.vnId,
+          sourceBlueprintId: sourceBlueprint.blueprintId,
+          sourceBlueprintName: sourceBlueprint.blueprintName,
+          targetBlueprintId,
+          targetBlueprintName: targetBlueprint.blueprintName,
+          status: "skipped_exists",
+          message: "VXLAN already exists in target blueprint"
+        });
+        continue;
+      }
+
+      const targetSecurityZoneId = resolveTargetSecurityZoneId(sourceVxlan, sourceBlueprint, targetBlueprint);
+      if (!targetSecurityZoneId) {
+        results.push({
+          stretchKey,
+          vxlanLabel: sourceVxlan.label,
+          vxlanVni: sourceVxlan.vnId,
+          sourceBlueprintId: sourceBlueprint.blueprintId,
+          sourceBlueprintName: sourceBlueprint.blueprintName,
+          targetBlueprintId,
+          targetBlueprintName: targetBlueprint.blueprintName,
+          status: "failed",
+          message: "Target blueprint does not contain a matching security zone"
+        });
+        continue;
+      }
+
+      const targetBoundTo = buildTargetBoundToBindings(sourceVxlan, targetBlueprint.assignableSystemIds);
+      if (targetBoundTo.length === 0) {
+        results.push({
+          stretchKey,
+          vxlanLabel: sourceVxlan.label,
+          vxlanVni: sourceVxlan.vnId,
+          sourceBlueprintId: sourceBlueprint.blueprintId,
+          sourceBlueprintName: sourceBlueprint.blueprintName,
+          targetBlueprintId,
+          targetBlueprintName: targetBlueprint.blueprintName,
+          status: "failed",
+          message: "No target switch bindings available for default all-switch assignment"
+        });
+        continue;
+      }
+
+      const payload = buildVirtualNetworkCreatePayload(sourceVxlan, targetSecurityZoneId, targetBoundTo);
+
+      try {
+        await apiPost(
+          connection,
+          `${API_ROOT}/blueprints/${encodeURIComponent(targetBlueprintId)}/${VIRTUAL_NETWORKS_PATH_SUFFIX}`,
+          payload,
+          token,
+          authHeaders
+        );
+
+        targetBlueprint.vxlanByStretchKey.set(stretchKey, {
+          ...sourceVxlan,
+          id: "",
+          securityZoneId: targetSecurityZoneId
+        });
+
+        results.push({
+          stretchKey,
+          vxlanLabel: sourceVxlan.label,
+          vxlanVni: sourceVxlan.vnId,
+          sourceBlueprintId: sourceBlueprint.blueprintId,
+          sourceBlueprintName: sourceBlueprint.blueprintName,
+          targetBlueprintId,
+          targetBlueprintName: targetBlueprint.blueprintName,
+          status: "created",
+          message: "VXLAN copied to target blueprint"
+        });
+      } catch (error) {
+        results.push({
+          stretchKey,
+          vxlanLabel: sourceVxlan.label,
+          vxlanVni: sourceVxlan.vnId,
+          sourceBlueprintId,
+          sourceBlueprintName: sourceBlueprint.blueprintName,
+          targetBlueprintId,
+          targetBlueprintName: targetBlueprint.blueprintName,
+          status: "failed",
+          message: error?.message || "Failed to create VXLAN in target blueprint"
+        });
+      }
+    }
+  }
+
+  const createdCount = results.filter((item) => item.status === "created").length;
+  const skippedCount = results.filter((item) => item.status.startsWith("skipped")).length;
+  const failedCount = results.filter((item) => item.status === "failed").length;
+
+  return {
+    generatedAt: Date.now(),
+    sourceBlueprintId: sourceBlueprintId || "",
+    sourceBlueprintName: sourceBlueprintId
+      ? (blueprintMap.get(sourceBlueprintId)?.blueprintName || "")
+      : "",
+    targetBlueprintIds,
+    scopeBlueprintIds,
+    preferredSourceBlueprintId,
+    selectedStretchKeyCount: stretchKeys.length,
+    createdCount,
+    skippedCount,
+    failedCount,
+    results
+  };
+}
+
+async function stretchVrfs(request) {
+  const connection = await getConnectionStatus();
+
+  if (connection.state === "NOT_ON_DCD_TAB") {
+    throw createError("Open a Data Center Director tab first.", "NOT_ON_DCD_TAB");
+  }
+
+  if (connection.state === "WAITING_FOR_TOKEN") {
+    throw createError(
+      "Token/auth headers not captured yet. Generate API traffic, then Refresh Status.",
+      "TOKEN_MISSING"
+    );
+  }
+
+  if (connection.state !== "READY") {
+    throw createError("Connection is not ready.", "NOT_READY");
+  }
+
+  const sourceBlueprintId = asString(request?.sourceBlueprintId).trim();
+  const targetBlueprintIds = dedupeStrings(
+    Array.isArray(request?.targetBlueprintIds)
+      ? request.targetBlueprintIds.map((item) => asString(item).trim()).filter(Boolean)
+      : []
+  );
+  const scopeBlueprintIds = dedupeStrings(
+    Array.isArray(request?.scopeBlueprintIds)
+      ? request.scopeBlueprintIds.map((item) => asString(item).trim()).filter(Boolean)
+      : []
+  );
+  const preferredSourceBlueprintId = asString(request?.preferredSourceBlueprintId).trim();
+  const stretchKeys = dedupeStrings(
+    Array.isArray(request?.stretchKeys)
+      ? request.stretchKeys.map((item) => asString(item).trim()).filter(Boolean)
+      : []
+  );
+
+  if (stretchKeys.length === 0) {
+    throw createError("Select at least one VRF to stretch", "BAD_REQUEST");
+  }
+
+  const tokenInfo = tokenCache.get(connection.origin) || {};
+  const token = tokenInfo.token || null;
+  const authHeaders = sanitizeCapturedHeaders(tokenInfo.authHeaders || {});
+
+  const facts = await fetchBlueprintVrfFacts(connection, token, authHeaders);
+  const blueprintMap = new Map(facts.blueprintRows.map((item) => [item.blueprintId, item]));
+
+  const plans = [];
+
+  if (scopeBlueprintIds.length > 0) {
+    if (scopeBlueprintIds.length < 2) {
+      throw createError("At least two scope blueprints are required", "BAD_REQUEST");
+    }
+
+    const invalidScope = scopeBlueprintIds.filter((item) => !blueprintMap.has(item));
+    if (invalidScope.length > 0) {
+      throw createError(`Unknown scope blueprint id(s): ${invalidScope.join(", ")}`, "BAD_REQUEST");
+    }
+
+    for (const stretchKey of stretchKeys) {
+      const sourceCandidates = scopeBlueprintIds.filter((blueprintId) => {
+        const blueprint = blueprintMap.get(blueprintId);
+        return Boolean(blueprint?.vrfByStretchKey.has(stretchKey));
+      });
+
+      const targets = scopeBlueprintIds.filter((blueprintId) => {
+        const blueprint = blueprintMap.get(blueprintId);
+        return !blueprint?.vrfByStretchKey.has(stretchKey);
+      });
+
+      const selectedSourceBlueprintId = choosePreferredScopeSourceBlueprintId(
+        sourceCandidates,
+        preferredSourceBlueprintId,
+        blueprintMap
+      );
+
+      plans.push({
+        stretchKey,
+        sourceBlueprintId: selectedSourceBlueprintId,
+        targetBlueprintIds: targets,
+        mode: "scope"
+      });
+    }
+  } else {
+    if (!sourceBlueprintId) {
+      throw createError("sourceBlueprintId is required", "BAD_REQUEST");
+    }
+
+    if (targetBlueprintIds.length === 0) {
+      throw createError("At least one target blueprint is required", "BAD_REQUEST");
+    }
+
+    const sourceBlueprint = blueprintMap.get(sourceBlueprintId);
+    if (!sourceBlueprint) {
+      throw createError(`Source blueprint ${sourceBlueprintId} not found`, "BAD_REQUEST");
+    }
+
+    const invalidTargets = targetBlueprintIds.filter((targetId) => !blueprintMap.has(targetId));
+    if (invalidTargets.length > 0) {
+      throw createError(`Unknown target blueprint id(s): ${invalidTargets.join(", ")}`, "BAD_REQUEST");
+    }
+
+    for (const stretchKey of stretchKeys) {
+      plans.push({
+        stretchKey,
+        sourceBlueprintId,
+        targetBlueprintIds,
+        mode: "legacy"
+      });
+    }
+  }
+
+  const results = [];
+
+  for (const plan of plans) {
+    const stretchKey = plan.stretchKey;
+    const sourceBlueprint = plan.sourceBlueprintId
+      ? blueprintMap.get(plan.sourceBlueprintId)
+      : null;
+
+    const sourceVrf = sourceBlueprint?.vrfByStretchKey.get(stretchKey) || null;
+
+    if (!sourceVrf) {
+      for (const targetBlueprintId of plan.targetBlueprintIds) {
+        const targetBlueprint = blueprintMap.get(targetBlueprintId);
+        results.push({
+          stretchKey,
+          vrfLabel: "Unknown VRF",
+          sourceBlueprintId: plan.sourceBlueprintId || "",
+          sourceBlueprintName: sourceBlueprint?.blueprintName || "(auto)",
+          targetBlueprintId,
+          targetBlueprintName: targetBlueprint?.blueprintName || targetBlueprintId,
+          status: "skipped_source_missing",
+          message: plan.mode === "scope"
+            ? "VRF is not present in any source blueprint within selected scope"
+            : "VRF not present in source blueprint"
+        });
+      }
+
+      continue;
+    }
+
+    if (plan.targetBlueprintIds.length === 0 && plan.mode === "scope") {
+      results.push({
+        stretchKey,
+        vrfLabel: sourceVrf.label,
+        sourceBlueprintId: sourceBlueprint.blueprintId,
+        sourceBlueprintName: sourceBlueprint.blueprintName,
+        targetBlueprintId: "",
+        targetBlueprintName: "",
+        status: "skipped_exists",
+        message: "VRF already exists in all selected scope blueprints"
+      });
+      continue;
+    }
+
+    for (const targetBlueprintId of plan.targetBlueprintIds) {
+      const targetBlueprint = blueprintMap.get(targetBlueprintId);
+
+      if (!targetBlueprint || targetBlueprintId === sourceBlueprint.blueprintId) {
+        continue;
+      }
+
+      if (targetBlueprint.vrfByStretchKey.has(stretchKey)) {
+        results.push({
+          stretchKey,
+          vrfLabel: sourceVrf.label,
+          sourceBlueprintId: sourceBlueprint.blueprintId,
+          sourceBlueprintName: sourceBlueprint.blueprintName,
+          targetBlueprintId,
+          targetBlueprintName: targetBlueprint.blueprintName,
+          status: "skipped_exists",
+          message: "VRF already exists in target blueprint"
+        });
+        continue;
+      }
+
+      const payload = buildSecurityZoneCreatePayload(sourceVrf);
+
+      try {
+        await apiPost(
+          connection,
+          `${API_ROOT}/blueprints/${encodeURIComponent(targetBlueprintId)}/${SECURITY_ZONES_PATH_SUFFIX}`,
+          payload,
+          token,
+          authHeaders
+        );
+
+        targetBlueprint.vrfByStretchKey.set(stretchKey, {
+          ...sourceVrf,
+          id: ""
+        });
+
+        results.push({
+          stretchKey,
+          vrfLabel: sourceVrf.label,
+          sourceBlueprintId: sourceBlueprint.blueprintId,
+          sourceBlueprintName: sourceBlueprint.blueprintName,
+          targetBlueprintId,
+          targetBlueprintName: targetBlueprint.blueprintName,
+          status: "created",
+          message: "VRF copied to target blueprint"
+        });
+      } catch (error) {
+        results.push({
+          stretchKey,
+          vrfLabel: sourceVrf.label,
+          sourceBlueprintId: sourceBlueprint.blueprintId,
+          sourceBlueprintName: sourceBlueprint.blueprintName,
+          targetBlueprintId,
+          targetBlueprintName: targetBlueprint.blueprintName,
+          status: "failed",
+          message: error?.message || "Failed to create VRF in target blueprint"
+        });
+      }
+    }
+  }
+
+  const createdCount = results.filter((item) => item.status === "created").length;
+  const skippedCount = results.filter((item) => item.status.startsWith("skipped")).length;
+  const failedCount = results.filter((item) => item.status === "failed").length;
+
+  return {
+    generatedAt: Date.now(),
+    sourceBlueprintId: sourceBlueprintId || "",
+    sourceBlueprintName: sourceBlueprintId
+      ? (blueprintMap.get(sourceBlueprintId)?.blueprintName || "")
+      : "",
+    targetBlueprintIds,
+    scopeBlueprintIds,
+    preferredSourceBlueprintId,
+    selectedStretchKeyCount: stretchKeys.length,
+    createdCount,
+    skippedCount,
+    failedCount,
+    results
   };
 }
 
@@ -893,6 +1501,723 @@ async function fetchGatewayConnectionsReport(connection, token, authHeaders) {
     unmatchedRows,
     blueprintRows
   };
+}
+
+async function fetchVxlanStretchReport(connection, token, authHeaders) {
+  const facts = await fetchBlueprintVxlanFacts(connection, token, authHeaders);
+  const allBlueprintIds = facts.blueprintRows.map((item) => item.blueprintId);
+
+  const rows = facts.rows.map((row) => {
+    const presenceIds = row.presentBlueprints.map((item) => item.blueprintId);
+    const missingIds = allBlueprintIds.filter((id) => !presenceIds.includes(id));
+
+    return {
+      ...row,
+      presenceBlueprintIds: presenceIds,
+      missingBlueprintIds: missingIds
+    };
+  });
+
+  const totalVxlans = facts.blueprintRows.reduce((sum, item) => sum + item.vxlanCount, 0);
+  const fullyPresentCount = rows.filter((row) => row.presentBlueprints.length === allBlueprintIds.length).length;
+  const partialCount = rows.filter((row) => row.presentBlueprints.length > 0 && row.presentBlueprints.length < allBlueprintIds.length).length;
+
+  return {
+    generatedAt: Date.now(),
+    blueprintCount: facts.blueprintRows.length,
+    totalVxlanCount: totalVxlans,
+    uniqueVxlanCount: rows.length,
+    fullPresenceCount: fullyPresentCount,
+    partialPresenceCount: partialCount,
+    partialFailures: facts.partialFailures,
+    blueprints: facts.blueprintRows,
+    rows
+  };
+}
+
+async function fetchVrfStretchReport(connection, token, authHeaders) {
+  const facts = await fetchBlueprintVrfFacts(connection, token, authHeaders);
+  const allBlueprintIds = facts.blueprintRows.map((item) => item.blueprintId);
+
+  const rows = facts.rows.map((row) => {
+    const presenceIds = row.presentBlueprints.map((item) => item.blueprintId);
+    const missingIds = allBlueprintIds.filter((id) => !presenceIds.includes(id));
+
+    return {
+      ...row,
+      presenceBlueprintIds: presenceIds,
+      missingBlueprintIds: missingIds
+    };
+  });
+
+  const totalVrfs = facts.blueprintRows.reduce((sum, item) => sum + item.vrfCount, 0);
+  const fullyPresentCount = rows.filter((row) => row.presentBlueprints.length === allBlueprintIds.length).length;
+  const partialCount = rows.filter((row) => row.presentBlueprints.length > 0 && row.presentBlueprints.length < allBlueprintIds.length).length;
+
+  return {
+    generatedAt: Date.now(),
+    blueprintCount: facts.blueprintRows.length,
+    totalVrfCount: totalVrfs,
+    uniqueVrfCount: rows.length,
+    fullPresenceCount: fullyPresentCount,
+    partialPresenceCount: partialCount,
+    partialFailures: facts.partialFailures,
+    blueprints: facts.blueprintRows,
+    rows
+  };
+}
+
+async function fetchBlueprintVrfFacts(connection, token, authHeaders) {
+  const blueprints = (await fetchCollection(connection, `${API_ROOT}/blueprints`, token, authHeaders))
+    .map(normalizeBlueprint)
+    .filter((item) => item.id);
+
+  const partialFailures = [];
+
+  const settledResults = await mapWithConcurrency(blueprints, 4, async (blueprint) => {
+    const encodedId = encodeURIComponent(blueprint.id);
+
+    const securityZonePayload = await apiGet(
+      connection,
+      `${API_ROOT}/blueprints/${encodedId}/${SECURITY_ZONES_PATH_SUFFIX}`,
+      token,
+      authHeaders
+    );
+
+    const vrfs = normalizeSecurityZoneCollection(securityZonePayload)
+      .filter((zone) => zone.stretchKey);
+
+    return {
+      blueprintId: blueprint.id,
+      blueprintName: blueprint.name,
+      vrfCount: vrfs.length,
+      vrfs,
+      vrfByStretchKey: new Map(vrfs.map((zone) => [zone.stretchKey, zone]))
+    };
+  });
+
+  const blueprintRows = [];
+
+  for (const result of settledResults) {
+    if (result.status === "fulfilled") {
+      blueprintRows.push(result.value);
+      continue;
+    }
+
+    const context = result.reason?.context;
+    partialFailures.push({
+      blueprintId: context?.blueprintId || "unknown",
+      blueprintName: context?.blueprintName || "Unknown blueprint",
+      message: result.reason?.message || "Failed to load blueprint VRF/security-zone data"
+    });
+  }
+
+  blueprintRows.sort((a, b) => a.blueprintName.localeCompare(b.blueprintName));
+
+  const rowMap = new Map();
+
+  for (const blueprint of blueprintRows) {
+    for (const vrf of blueprint.vrfs) {
+      if (!rowMap.has(vrf.stretchKey)) {
+        rowMap.set(vrf.stretchKey, {
+          stretchKey: vrf.stretchKey,
+          primaryLabel: vrf.label,
+          labels: vrf.label ? [vrf.label] : [],
+          vrfNames: vrf.vrfName ? [vrf.vrfName] : [],
+          vrfTypes: vrf.type ? [vrf.type] : [],
+          presentBlueprints: []
+        });
+      }
+
+      const row = rowMap.get(vrf.stretchKey);
+      row.presentBlueprints.push({
+        blueprintId: blueprint.blueprintId,
+        blueprintName: blueprint.blueprintName,
+        vrfId: vrf.id,
+        label: vrf.label,
+        vrfName: vrf.vrfName,
+        vrfType: vrf.type
+      });
+
+      if (vrf.label && !row.labels.includes(vrf.label)) {
+        row.labels.push(vrf.label);
+      }
+
+      if (vrf.vrfName && !row.vrfNames.includes(vrf.vrfName)) {
+        row.vrfNames.push(vrf.vrfName);
+      }
+
+      if (vrf.type && !row.vrfTypes.includes(vrf.type)) {
+        row.vrfTypes.push(vrf.type);
+      }
+    }
+  }
+
+  const rows = Array.from(rowMap.values())
+    .map((row) => ({
+      stretchKey: row.stretchKey,
+      primaryLabel: row.primaryLabel,
+      labels: row.labels.sort((a, b) => a.localeCompare(b)),
+      vrfNames: row.vrfNames.sort((a, b) => a.localeCompare(b)),
+      vrfTypes: row.vrfTypes.sort((a, b) => a.localeCompare(b)),
+      presentBlueprints: row.presentBlueprints.sort((a, b) => a.blueprintName.localeCompare(b.blueprintName))
+    }))
+    .sort((a, b) => {
+      const presenceDiff = b.presentBlueprints.length - a.presentBlueprints.length;
+      if (presenceDiff !== 0) {
+        return presenceDiff;
+      }
+
+      return (a.primaryLabel || "").localeCompare(b.primaryLabel || "");
+    });
+
+  return {
+    partialFailures,
+    blueprintRows,
+    rows
+  };
+}
+
+async function fetchBlueprintVxlanFacts(connection, token, authHeaders) {
+  const blueprints = (await fetchCollection(connection, `${API_ROOT}/blueprints`, token, authHeaders))
+    .map(normalizeBlueprint)
+    .filter((item) => item.id);
+
+  const partialFailures = [];
+
+  const settledResults = await mapWithConcurrency(blueprints, 4, async (blueprint) => {
+    const encodedId = encodeURIComponent(blueprint.id);
+
+    const [virtualNetworkPayload, securityZonePayload, systemNodes] = await Promise.all([
+      apiGet(
+        connection,
+        `${API_ROOT}/blueprints/${encodedId}/${VIRTUAL_NETWORKS_PATH_SUFFIX}`,
+        token,
+        authHeaders
+      ),
+      apiGet(
+        connection,
+        `${API_ROOT}/blueprints/${encodedId}/${SECURITY_ZONES_PATH_SUFFIX}`,
+        token,
+        authHeaders
+      ),
+      fetchBlueprintSystemNodes(connection, blueprint.id, token, authHeaders)
+    ]);
+
+    const securityZones = normalizeSecurityZoneCollection(securityZonePayload);
+    const securityZoneById = new Map(securityZones.map((zone) => [zone.id, zone]));
+
+    const vxlans = normalizeVirtualNetworkCollection(virtualNetworkPayload, securityZoneById);
+    const vxlanByStretchKey = new Map(vxlans.map((vn) => [vn.stretchKey, vn]));
+    const existingBoundSystemIds = dedupeStrings(
+      vxlans.flatMap((vxlan) => (vxlan.boundTo || []).map((binding) => binding.systemId).filter(Boolean))
+    );
+    const switchSystemIds = dedupeStrings(
+      systemNodes
+        .filter((node) => isSwitchSystemRole(node.role))
+        .map((node) => node.id)
+        .concat(existingBoundSystemIds)
+    );
+
+    return {
+      blueprintId: blueprint.id,
+      blueprintName: blueprint.name,
+      securityZoneCount: securityZones.length,
+      vxlanCount: vxlans.length,
+      switchSystemCount: switchSystemIds.length,
+      securityZoneById,
+      securityZoneByLabelKey: new Map(
+        securityZones
+          .filter((zone) => zone.labelKey)
+          .map((zone) => [zone.labelKey, zone.id])
+      ),
+      assignableSystemIds: switchSystemIds,
+      vxlans,
+      vxlanByStretchKey
+    };
+  });
+
+  const blueprintRows = [];
+
+  for (const result of settledResults) {
+    if (result.status === "fulfilled") {
+      blueprintRows.push(result.value);
+      continue;
+    }
+
+    const context = result.reason?.context;
+    partialFailures.push({
+      blueprintId: context?.blueprintId || "unknown",
+      blueprintName: context?.blueprintName || "Unknown blueprint",
+      message: result.reason?.message || "Failed to load blueprint VXLAN/security-zone data"
+    });
+  }
+
+  blueprintRows.sort((a, b) => a.blueprintName.localeCompare(b.blueprintName));
+
+  const rowMap = new Map();
+
+  for (const blueprint of blueprintRows) {
+    for (const vxlan of blueprint.vxlans) {
+      if (!rowMap.has(vxlan.stretchKey)) {
+        rowMap.set(vxlan.stretchKey, {
+          stretchKey: vxlan.stretchKey,
+          vnId: vxlan.vnId,
+          vnType: vxlan.vnType,
+          primaryLabel: vxlan.label,
+          labels: [vxlan.label],
+          securityZoneLabels: vxlan.securityZoneLabel ? [vxlan.securityZoneLabel] : [],
+          ipv4Subnets: vxlan.ipv4Subnet ? [vxlan.ipv4Subnet] : [],
+          ipv6Subnets: vxlan.ipv6Subnet ? [vxlan.ipv6Subnet] : [],
+          presentBlueprints: []
+        });
+      }
+
+      const row = rowMap.get(vxlan.stretchKey);
+      row.presentBlueprints.push({
+        blueprintId: blueprint.blueprintId,
+        blueprintName: blueprint.blueprintName,
+        vxlanId: vxlan.id,
+        label: vxlan.label,
+        vnId: vxlan.vnId
+      });
+
+      if (vxlan.label && !row.labels.includes(vxlan.label)) {
+        row.labels.push(vxlan.label);
+      }
+
+      if (vxlan.securityZoneLabel && !row.securityZoneLabels.includes(vxlan.securityZoneLabel)) {
+        row.securityZoneLabels.push(vxlan.securityZoneLabel);
+      }
+
+      if (vxlan.ipv4Subnet && !row.ipv4Subnets.includes(vxlan.ipv4Subnet)) {
+        row.ipv4Subnets.push(vxlan.ipv4Subnet);
+      }
+
+      if (vxlan.ipv6Subnet && !row.ipv6Subnets.includes(vxlan.ipv6Subnet)) {
+        row.ipv6Subnets.push(vxlan.ipv6Subnet);
+      }
+    }
+  }
+
+  const rows = Array.from(rowMap.values())
+    .map((row) => ({
+      stretchKey: row.stretchKey,
+      vnId: row.vnId,
+      vnType: row.vnType,
+      primaryLabel: row.primaryLabel,
+      labels: row.labels.sort((a, b) => a.localeCompare(b)),
+      securityZoneLabels: row.securityZoneLabels.sort((a, b) => a.localeCompare(b)),
+      ipv4Subnets: row.ipv4Subnets.sort((a, b) => a.localeCompare(b)),
+      ipv6Subnets: row.ipv6Subnets.sort((a, b) => a.localeCompare(b)),
+      presentBlueprints: row.presentBlueprints.sort((a, b) => a.blueprintName.localeCompare(b.blueprintName))
+    }))
+    .sort((a, b) => {
+      const presenceDiff = b.presentBlueprints.length - a.presentBlueprints.length;
+      if (presenceDiff !== 0) {
+        return presenceDiff;
+      }
+
+      const vniDiff = compareOptionalNumbers(a.vnId, b.vnId);
+      if (vniDiff !== 0) {
+        return vniDiff;
+      }
+
+      return (a.primaryLabel || "").localeCompare(b.primaryLabel || "");
+    });
+
+  return {
+    partialFailures,
+    blueprintRows,
+    rows
+  };
+}
+
+function normalizeVirtualNetworkCollection(payload, securityZoneById) {
+  const values = extractCollectionValues(payload, ["virtual_networks", "items", "results", "data"]);
+
+  return values
+    .map((item) => normalizeVirtualNetwork(item, securityZoneById))
+    .filter((item) => item.stretchKey);
+}
+
+function normalizeVirtualNetwork(value, securityZoneById) {
+  const source = value && typeof value === "object" ? value : {};
+
+  const securityZoneId = firstString(source, ["security_zone_id"]) || "";
+  const securityZoneLabel = securityZoneById.get(securityZoneId)?.label || "";
+
+  const vnIdRaw = source.vn_id;
+  const vnId = vnIdRaw === null || vnIdRaw === undefined ? "" : String(vnIdRaw).trim();
+
+  const boundTo = Array.isArray(source.bound_to)
+    ? source.bound_to
+      .map((item) => {
+        const binding = item && typeof item === "object" ? item : {};
+        return {
+          systemId: firstString(binding, ["system_id", "id", "uuid"]) || "",
+          accessSwitchNodeIds: Array.isArray(binding.access_switch_node_ids)
+            ? binding.access_switch_node_ids.map((entry) => asString(entry)).filter(Boolean)
+            : [],
+          vlanId: asFiniteNumber(binding.vlan_id)
+        };
+      })
+      .filter((item) => item.systemId)
+    : [];
+
+  const normalized = {
+    id: firstString(source, ["id", "uuid"]) || "",
+    label: firstString(source, ["label", "name", "display_name"]) || "Unnamed VXLAN",
+    description: source.description === null ? null : asString(source.description),
+    vnType: firstString(source, ["vn_type"]) || "vxlan",
+    vnId,
+    reservedVlanId: asFiniteNumber(source.reserved_vlan_id),
+    ipv4Subnet: firstString(source, ["ipv4_subnet"]) || "",
+    ipv6Subnet: firstString(source, ["ipv6_subnet"]) || "",
+    virtualGatewayIpv4: firstString(source, ["virtual_gateway_ipv4"]) || "",
+    virtualGatewayIpv6: firstString(source, ["virtual_gateway_ipv6"]) || "",
+    virtualGatewayIpv4Enabled: Boolean(source.virtual_gateway_ipv4_enabled),
+    virtualGatewayIpv6Enabled: Boolean(source.virtual_gateway_ipv6_enabled),
+    virtualMac: firstString(source, ["virtual_mac"]) || "",
+    ipv4Enabled: source.ipv4_enabled !== false,
+    ipv6Enabled: Boolean(source.ipv6_enabled),
+    dhcpService: firstString(source, ["dhcp_service"]) || "",
+    securityZoneId,
+    securityZoneLabel,
+    rtPolicy: source.rt_policy ?? null,
+    routeTarget: firstString(source, ["route_target"]) || "",
+    l3Mtu: asFiniteNumber(source.l3_mtu),
+    tenant: source.tenant ?? null,
+    tags: Array.isArray(source.tags) ? source.tags : [],
+    boundTo
+  };
+
+  normalized.stretchKey = buildVxlanStretchKey(normalized);
+  return normalized;
+}
+
+function normalizeSecurityZoneCollection(payload) {
+  const values = extractCollectionValues(payload, ["security_zones", "items", "results", "data"]);
+
+  return values
+    .map((item) => {
+      const zone = item && typeof item === "object" ? item : {};
+      const label = firstString(zone, ["label", "name", "display_name"]) || "";
+      const importRouteTargets = dedupeStrings(
+        Array.isArray(zone.import_route_targets)
+          ? zone.import_route_targets.map((entry) => asString(entry)).filter(Boolean)
+          : []
+      );
+      const exportRouteTargets = dedupeStrings(
+        Array.isArray(zone.export_route_targets)
+          ? zone.export_route_targets.map((entry) => asString(entry)).filter(Boolean)
+          : []
+      );
+
+      const normalized = {
+        id: firstString(zone, ["id", "uuid"]) || "",
+        label,
+        labelKey: normalizeLookupKey(label),
+        type: firstString(zone, ["sz_type", "type"]) || "",
+        vrfName: firstString(zone, ["vrf_name", "routing_zone_name"]) || label,
+        vnId: firstString(zone, ["vn_id", "vni"]) || "",
+        description: zone.description === null ? null : asString(zone.description),
+        rtPolicy: zone.rt_policy ?? null,
+        routeTarget: firstString(zone, ["route_target"]) || "",
+        importRouteTargets,
+        exportRouteTargets,
+        tenant: zone.tenant ?? null,
+        tags: Array.isArray(zone.tags) ? zone.tags : [],
+        rawSource: stripSecurityZoneReadOnlyFields(zone)
+      };
+
+      normalized.stretchKey = buildVrfStretchKey(normalized);
+      return normalized;
+    })
+    .filter((zone) => zone.id);
+}
+
+function buildVrfStretchKey(vrf) {
+  const vni = asString(vrf?.vnId).trim();
+  if (vni) {
+    return `vni:${vni}`;
+  }
+
+  const vrfNameKey = normalizeLookupKey(vrf?.vrfName || "");
+  const labelKey = normalizeLookupKey(vrf?.label || "");
+  const typeKey = normalizeLookupKey(vrf?.type || "");
+  const primaryKey = vrfNameKey || labelKey;
+
+  if (!primaryKey) {
+    return "";
+  }
+
+  return `vrf:${primaryKey}|type:${typeKey}`;
+}
+
+function stripSecurityZoneReadOnlyFields(zone) {
+  const source = zone && typeof zone === "object" ? zone : {};
+  const output = {};
+
+  for (const [key, value] of Object.entries(source)) {
+    const lowerKey = key.toLowerCase();
+
+    if (
+      lowerKey === "id" ||
+      lowerKey === "uuid" ||
+      lowerKey === "href" ||
+      lowerKey === "display_name" ||
+      lowerKey === "created_at" ||
+      lowerKey === "updated_at" ||
+      lowerKey === "last_modified_at" ||
+      lowerKey === "last_modified_by" ||
+      lowerKey === "resource_type" ||
+      lowerKey === "blueprint_id" ||
+      lowerKey === "status" ||
+      lowerKey === "_id" ||
+      lowerKey === "_key" ||
+      lowerKey === "_rev" ||
+      lowerKey === "links"
+    ) {
+      continue;
+    }
+
+    output[key] = value;
+  }
+
+  return stripUndefinedProperties(output);
+}
+
+function extractCollectionValues(payload, preferredKeys = []) {
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  for (const key of preferredKeys) {
+    const candidate = payload[key];
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+
+    if (candidate && typeof candidate === "object") {
+      return Object.values(candidate);
+    }
+  }
+
+  return [];
+}
+
+function buildVxlanStretchKey(vxlan) {
+  const vni = asString(vxlan?.vnId).trim();
+  if (vni) {
+    return `vni:${vni}`;
+  }
+
+  const labelKey = normalizeLookupKey(vxlan?.label || "");
+  const zoneKey = normalizeLookupKey(vxlan?.securityZoneLabel || "");
+  const subnet4 = normalizeLookupKey(vxlan?.ipv4Subnet || "");
+  const subnet6 = normalizeLookupKey(vxlan?.ipv6Subnet || "");
+
+  if (!labelKey) {
+    return "";
+  }
+
+  return `label:${labelKey}|zone:${zoneKey}|subnet4:${subnet4}|subnet6:${subnet6}`;
+}
+
+function resolveTargetSecurityZoneId(sourceVxlan, sourceBlueprint, targetBlueprint) {
+  if (!sourceVxlan || !targetBlueprint) {
+    return "";
+  }
+
+  if (
+    sourceVxlan.securityZoneId &&
+    targetBlueprint.securityZoneById.has(sourceVxlan.securityZoneId)
+  ) {
+    return sourceVxlan.securityZoneId;
+  }
+
+  const sourceZoneLabel = sourceVxlan.securityZoneLabel ||
+    sourceBlueprint.securityZoneById.get(sourceVxlan.securityZoneId)?.label ||
+    "";
+
+  const sourceZoneKey = normalizeLookupKey(sourceZoneLabel);
+  if (!sourceZoneKey) {
+    return "";
+  }
+
+  return targetBlueprint.securityZoneByLabelKey.get(sourceZoneKey) || "";
+}
+
+function buildVirtualNetworkCreatePayload(sourceVxlan, targetSecurityZoneId, boundTo) {
+  const payload = {
+    label: sourceVxlan.label,
+    description: sourceVxlan.description,
+    vn_type: sourceVxlan.vnType || "vxlan",
+    vn_id: sourceVxlan.vnId || undefined,
+    reserved_vlan_id: sourceVxlan.reservedVlanId,
+    ipv4_subnet: sourceVxlan.ipv4Subnet || null,
+    ipv6_subnet: sourceVxlan.ipv6Subnet || null,
+    virtual_gateway_ipv4: sourceVxlan.virtualGatewayIpv4 || null,
+    virtual_gateway_ipv6: sourceVxlan.virtualGatewayIpv6 || null,
+    virtual_gateway_ipv4_enabled: Boolean(sourceVxlan.virtualGatewayIpv4Enabled),
+    virtual_gateway_ipv6_enabled: Boolean(sourceVxlan.virtualGatewayIpv6Enabled),
+    virtual_mac: sourceVxlan.virtualMac || null,
+    ipv4_enabled: sourceVxlan.ipv4Enabled !== false,
+    ipv6_enabled: Boolean(sourceVxlan.ipv6Enabled),
+    dhcp_service: sourceVxlan.dhcpService || "dhcpServiceDisabled",
+    security_zone_id: targetSecurityZoneId,
+    rt_policy: sourceVxlan.rtPolicy ?? null,
+    l3_mtu: sourceVxlan.l3Mtu,
+    route_target: sourceVxlan.routeTarget || null,
+    tenant: sourceVxlan.tenant ?? null,
+    tags: Array.isArray(sourceVxlan.tags) ? sourceVxlan.tags : [],
+    bound_to: boundTo
+  };
+
+  return stripUndefinedProperties(payload);
+}
+
+function buildSecurityZoneCreatePayload(sourceVrf) {
+  const rawSource = sourceVrf?.rawSource && typeof sourceVrf.rawSource === "object"
+    ? sourceVrf.rawSource
+    : {};
+  const hasRawVni = Object.prototype.hasOwnProperty.call(rawSource, "vni");
+  const hasRawVnId = Object.prototype.hasOwnProperty.call(rawSource, "vn_id");
+
+  const payload = {
+    ...stripSecurityZoneReadOnlyFields(rawSource),
+    label: sourceVrf.label,
+    description: sourceVrf.description,
+    sz_type: sourceVrf.type || undefined,
+    vrf_name: sourceVrf.vrfName || undefined,
+    rt_policy: sourceVrf.rtPolicy ?? null,
+    route_target: sourceVrf.routeTarget || null,
+    tenant: sourceVrf.tenant ?? null,
+    tags: Array.isArray(sourceVrf.tags) ? sourceVrf.tags : []
+  };
+
+  if (sourceVrf.vnId) {
+    if (hasRawVni && !hasRawVnId) {
+      payload.vni = sourceVrf.vnId;
+    } else {
+      payload.vn_id = sourceVrf.vnId;
+    }
+  }
+
+  if (Array.isArray(sourceVrf.importRouteTargets) && sourceVrf.importRouteTargets.length > 0) {
+    payload.import_route_targets = sourceVrf.importRouteTargets;
+  }
+
+  if (Array.isArray(sourceVrf.exportRouteTargets) && sourceVrf.exportRouteTargets.length > 0) {
+    payload.export_route_targets = sourceVrf.exportRouteTargets;
+  }
+
+  return stripUndefinedProperties(payload);
+}
+
+function buildTargetBoundToBindings(sourceVxlan, targetSystemIds) {
+  const sourceBindings = Array.isArray(sourceVxlan?.boundTo) ? sourceVxlan.boundTo : [];
+  const fallbackVlanId =
+    sourceBindings.find((binding) => Number.isFinite(binding.vlanId))?.vlanId ??
+    sourceVxlan?.reservedVlanId ??
+    null;
+
+  return dedupeStrings(targetSystemIds || []).map((systemId) => {
+    const binding = {
+      system_id: systemId,
+      access_switch_node_ids: []
+    };
+
+    if (Number.isFinite(fallbackVlanId)) {
+      binding.vlan_id = fallbackVlanId;
+    }
+
+    return binding;
+  });
+}
+
+function choosePreferredScopeSourceBlueprintId(candidateIds, preferredSourceBlueprintId, blueprintMap) {
+  const candidates = dedupeStrings(candidateIds || []);
+  if (candidates.length === 0) {
+    return "";
+  }
+
+  if (preferredSourceBlueprintId && candidates.includes(preferredSourceBlueprintId)) {
+    return preferredSourceBlueprintId;
+  }
+
+  return [...candidates]
+    .sort((leftId, rightId) => {
+      const leftName = blueprintMap.get(leftId)?.blueprintName || leftId;
+      const rightName = blueprintMap.get(rightId)?.blueprintName || rightId;
+      return leftName.localeCompare(rightName);
+    })[0];
+}
+
+function isSwitchSystemRole(roleValue) {
+  const role = normalizeLookupKey(asString(roleValue));
+  return role === "leaf" || role === "access" || role === "access_switch" || role === "tor";
+}
+
+async function fetchBlueprintSystemNodes(connection, blueprintId, token, authHeaders) {
+  const encodedId = encodeURIComponent(blueprintId);
+  const query = "{ system_nodes { id role } }";
+
+  const payload = await apiPost(
+    connection,
+    `${API_ROOT}/blueprints/${encodedId}/ql`,
+    { query },
+    token,
+    authHeaders
+  );
+
+  const nodes = Array.isArray(payload?.data?.system_nodes)
+    ? payload.data.system_nodes
+    : [];
+
+  return nodes
+    .map((item) => ({
+      id: firstString(item, ["id", "uuid"]) || "",
+      role: firstString(item, ["role"]) || ""
+    }))
+    .filter((item) => item.id);
+}
+
+function stripUndefinedProperties(value) {
+  const output = {};
+
+  for (const [key, itemValue] of Object.entries(value || {})) {
+    if (itemValue === undefined) {
+      continue;
+    }
+
+    output[key] = itemValue;
+  }
+
+  return output;
+}
+
+function compareOptionalNumbers(leftValue, rightValue) {
+  const left = Number(leftValue);
+  const right = Number(rightValue);
+
+  const leftFinite = Number.isFinite(left);
+  const rightFinite = Number.isFinite(right);
+
+  if (leftFinite && rightFinite) {
+    return left - right;
+  }
+
+  if (leftFinite) {
+    return -1;
+  }
+
+  if (rightFinite) {
+    return 1;
+  }
+
+  return String(leftValue || "").localeCompare(String(rightValue || ""));
 }
 
 async function fetchBlueprintBgpSessionFacts(connection, blueprintId, token, authHeaders) {

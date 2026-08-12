@@ -1,6 +1,6 @@
 # Data Center Director Tools (Chrome Extension)
 
-This repository contains a zero-configuration Chrome extension for Data Center Director configlet audit and drift remediation.
+This repository contains a zero-configuration Chrome extension for Data Center Director configlet audit, gateway correlation, and scoped VXLAN/VRF stretch operations.
 
 ## Developer Guide
 
@@ -28,6 +28,9 @@ This repository contains a zero-configuration Chrome extension for Data Center D
   - Per-blueprint details and diff view against global catalog
   - Per-entry Refresh from Global action for out-of-sync items
   - Search, blueprint filter, sorting, and CSV export
+- Runs Gateway Links to correlate inter-blueprint gateway relationships and BGP evidence.
+- Runs scope-first VXLAN Stretch to bulk copy missing VXLANs across selected blueprints.
+- Runs scope-first VRF Stretch to bulk copy missing routing zones/security zones across selected blueprints.
 
 ## Local Install (Unpacked)
 
@@ -42,6 +45,38 @@ This repository contains a zero-configuration Chrome extension for Data Center D
 7. Click Refresh Status.
 8. If needed, click Refresh Token Capture to collect fresh auth headers from live UI traffic.
 9. Open Configlet Audit and click Refresh.
+
+## Downloadable ZIP on Every main Update
+
+This repo auto-builds a ZIP package any time `main` is updated (both direct commits and merged PRs).
+
+- Workflow: `.github/workflows/release-zip.yml`
+- Trigger: push to `main`
+- Output: a prerelease tagged `main-latest` with one downloadable ZIP asset
+- Included in ZIP: `manifest.json`, `popup/`, `src/`, and `README.md`
+
+To install from the ZIP:
+
+1. Open the repository Releases page and select the `main-latest` prerelease.
+2. Download the ZIP asset from that release.
+3. Unzip it locally.
+4. Open `chrome://extensions`.
+5. Enable Developer mode.
+6. Click Load unpacked.
+7. Select the unzipped folder.
+
+Note: the ZIP is published by GitHub Actions as a release artifact on `main-latest`.
+
+## Scope-First Stretch Workflow
+
+Both VXLAN and VRF tools follow the same operator workflow:
+
+1. Select a blueprint scope (subset or all DCs).
+2. Review "Blueprint Stretch Compatibility In Scope".
+3. Open planner and select only the rows you want.
+4. Run bulk stretch; targets are auto-derived from missing blueprints inside the selected scope.
+
+VRF stretch clones source routing-zone/security-zone values as closely as possible, including VNI/VNID fields where present.
 
 ## User Guide / Explainer
 
@@ -105,6 +140,7 @@ In the target blueprint, open the Uncommitted and Logical Diff views to confirm 
 
 - manifest.json: Extension manifest and permissions.
 - src/background.js: Service worker, token capture, API orchestration, refresh workflow.
+- src/background.js: Service worker, token capture, API orchestration, gateway correlation, VXLAN stretch, VRF stretch.
 - popup/popup.html: Popup layout and views.
 - popup/popup.css: Visual design and table/modal styling.
 - popup/popup.js: UI state management, filtering, CSV export, details, refresh actions.
