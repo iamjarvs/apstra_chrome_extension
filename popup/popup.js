@@ -3,10 +3,14 @@ const elements = {
   toggleNavButton: document.getElementById("toggleNavButton"),
   homeView: document.getElementById("homeView"),
   configletsView: document.getElementById("configletsView"),
+  insightsView: document.getElementById("insightsView"),
   navHome: document.getElementById("navHome"),
   navConfiglets: document.getElementById("navConfiglets"),
+  navInsights: document.getElementById("navInsights"),
   openConfigletsBtn: document.getElementById("openConfigletsBtn"),
+  openInsightsBtn: document.getElementById("openInsightsBtn"),
   backHomeButton: document.getElementById("backHomeButton"),
+  backHomeFromInsightsButton: document.getElementById("backHomeFromInsightsButton"),
   connectionBadge: document.getElementById("connectionBadge"),
   hostValue: document.getElementById("hostValue"),
   tokenValue: document.getElementById("tokenValue"),
@@ -15,6 +19,7 @@ const elements = {
   refreshButton: document.getElementById("refreshButton"),
   trafficButton: document.getElementById("trafficButton"),
   loadButton: document.getElementById("loadButton"),
+  loadInsightsButton: document.getElementById("loadInsightsButton"),
   searchInput: document.getElementById("searchInput"),
   blueprintFilter: document.getElementById("blueprintFilter"),
   sortOrder: document.getElementById("sortOrder"),
@@ -27,9 +32,22 @@ const elements = {
   unusedResultsBody: document.getElementById("unusedResultsBody"),
   exportActiveCsvButton: document.getElementById("exportActiveCsvButton"),
   exportUnusedCsvButton: document.getElementById("exportUnusedCsvButton"),
+  exportInsightsCsvButton: document.getElementById("exportInsightsCsvButton"),
+  exportInsightsBlueprintCsvButton: document.getElementById("exportInsightsBlueprintCsvButton"),
+  exportInsightsJsonButton: document.getElementById("exportInsightsJsonButton"),
   homeErrorBanner: document.getElementById("homeErrorBanner"),
   errorBanner: document.getElementById("errorBanner"),
+  insightsErrorBanner: document.getElementById("insightsErrorBanner"),
   updatedAt: document.getElementById("updatedAt"),
+  insightsUpdatedAt: document.getElementById("insightsUpdatedAt"),
+  insightTotalAssignments: document.getElementById("insightTotalAssignments"),
+  insightDriftRate: document.getElementById("insightDriftRate"),
+  insightGlobalUtilization: document.getElementById("insightGlobalUtilization"),
+  insightSingleBlueprintRisk: document.getElementById("insightSingleBlueprintRisk"),
+  insightTopDrifted: document.getElementById("insightTopDrifted"),
+  insightTopBlueprint: document.getElementById("insightTopBlueprint"),
+  insightsTopDriftedBody: document.getElementById("insightsTopDriftedBody"),
+  insightsBlueprintMetricsBody: document.getElementById("insightsBlueprintMetricsBody"),
   toast: document.getElementById("toast"),
   activeDetailsModal: document.getElementById("activeDetailsModal"),
   activeDetailsTitle: document.getElementById("activeDetailsTitle"),
@@ -41,6 +59,7 @@ const appState = {
   view: "home",
   connection: null,
   report: null,
+  insights: null,
   loadingStatus: false,
   loadingReport: false,
   refreshingEntryKey: "",
@@ -68,6 +87,17 @@ function wireEvents() {
     setView("configlets");
   });
 
+  elements.navInsights.addEventListener("click", () => {
+    if (!isAuthReady()) {
+      showError("Capture token/auth headers first.", "home");
+      return;
+    }
+    setView("insights");
+    if (!appState.report) {
+      void loadInsights();
+    }
+  });
+
   elements.openConfigletsBtn.addEventListener("click", () => {
     if (!isAuthReady()) {
       showError("Capture token/auth headers first.", "home");
@@ -80,7 +110,20 @@ function wireEvents() {
     }
   });
 
+  elements.openInsightsBtn.addEventListener("click", () => {
+    if (!isAuthReady()) {
+      showError("Capture token/auth headers first.", "home");
+      return;
+    }
+
+    setView("insights");
+    if (!appState.report) {
+      void loadInsights();
+    }
+  });
+
   elements.backHomeButton.addEventListener("click", () => setView("home"));
+  elements.backHomeFromInsightsButton.addEventListener("click", () => setView("home"));
 
   elements.refreshButton.addEventListener("click", () => {
     void refreshConnectionStatus();
@@ -94,12 +137,28 @@ function wireEvents() {
     void loadReport();
   });
 
+  elements.loadInsightsButton.addEventListener("click", () => {
+    void loadInsights();
+  });
+
   elements.exportActiveCsvButton.addEventListener("click", () => {
     exportActiveCsv();
   });
 
   elements.exportUnusedCsvButton.addEventListener("click", () => {
     exportUnusedCsv();
+  });
+
+  elements.exportInsightsCsvButton.addEventListener("click", () => {
+    exportInsightsSummaryCsv();
+  });
+
+  elements.exportInsightsBlueprintCsvButton.addEventListener("click", () => {
+    exportInsightsBlueprintCsv();
+  });
+
+  elements.exportInsightsJsonButton.addEventListener("click", () => {
+    exportInsightsJson();
   });
 
   elements.searchInput.addEventListener("input", () => {
@@ -232,6 +291,7 @@ async function initialize() {
   renderConnectionState();
   renderSummary();
   renderTables();
+  renderInsights();
   await refreshConnectionStatus();
 }
 
@@ -240,12 +300,15 @@ function setView(view) {
 
   const isHome = view === "home";
   const isConfiglets = view === "configlets";
+  const isInsights = view === "insights";
 
   elements.homeView.classList.toggle("hidden", !isHome);
   elements.configletsView.classList.toggle("hidden", !isConfiglets);
+  elements.insightsView.classList.toggle("hidden", !isInsights);
 
   elements.navHome.classList.toggle("active", isHome);
   elements.navConfiglets.classList.toggle("active", isConfiglets);
+  elements.navInsights.classList.toggle("active", isInsights);
 
   if (isHome) {
     closeActiveDetails();
@@ -264,6 +327,7 @@ async function refreshConnectionStatus() {
   appState.loadingStatus = true;
   clearError("home");
   clearError("report");
+  clearError("insights");
   elements.statusMessage.textContent = "Checking active tab...";
   renderConnectionState();
 
@@ -307,20 +371,26 @@ async function loadReport() {
 
   appState.loadingReport = true;
   clearError("report");
+  clearError("insights");
   elements.updatedAt.textContent = "Loading report...";
+  elements.insightsUpdatedAt.textContent = "Loading insights...";
   renderTableLoading();
+  renderInsightsLoading();
   renderConnectionState();
 
   try {
     const response = await sendMessage("runConfigletsReport");
     appState.connection = response.connection;
     appState.report = response.report;
+    appState.insights = buildInsightsModel(response.report);
     appState.expandedUnusedRowKeys.clear();
 
     populateBlueprintFilter();
     renderSummary();
     renderTables();
+    renderInsights();
     elements.updatedAt.textContent = formatUpdatedAt(response.report.generatedAt);
+    elements.insightsUpdatedAt.textContent = formatUpdatedAt(response.report.generatedAt);
 
     if (response.report.partialFailures.length > 0) {
       showError(
@@ -330,14 +400,22 @@ async function loadReport() {
     }
   } catch (error) {
     appState.report = null;
+    appState.insights = null;
     renderSummary();
     renderTables();
+    renderInsights();
     elements.updatedAt.textContent = "Report failed";
+    elements.insightsUpdatedAt.textContent = "Insights unavailable";
     showError(error.message || "Unable to load report", "report");
+    showError(error.message || "Unable to load insights", "insights");
   } finally {
     appState.loadingReport = false;
     renderConnectionState();
   }
+}
+
+async function loadInsights() {
+  await loadReport();
 }
 
 async function refreshOutOfSyncEntry({ blueprintId, configletId, configletName, entryKey }) {
@@ -417,11 +495,14 @@ function renderConnectionState() {
 
   const authReady = isAuthReady();
   elements.openConfigletsBtn.disabled = !authReady;
+  elements.openInsightsBtn.disabled = !authReady;
   elements.navConfiglets.disabled = !authReady;
+  elements.navInsights.disabled = !authReady;
 
   elements.refreshButton.disabled = appState.loadingStatus;
   elements.trafficButton.disabled = !connection || connection.state === "NOT_ON_DCD_TAB";
   elements.loadButton.disabled = !authReady || appState.loadingReport;
+  elements.loadInsightsButton.disabled = !authReady || appState.loadingReport;
 
   elements.homeHint.textContent = authReady
     ? "Ready. Select Configlet Audit to run or rerun the report."
@@ -445,6 +526,196 @@ function renderSummary() {
   elements.summaryConfiglets.textContent = numberFormat(report.uniqueConfigletCount);
   elements.summaryFailures.textContent = numberFormat(report.outOfSyncConfigletCount);
   elements.summaryUnused.textContent = numberFormat(report.unusedConfigletCount || 0);
+}
+
+function renderInsightsLoading() {
+  elements.insightTotalAssignments.textContent = "-";
+  elements.insightDriftRate.textContent = "-";
+  elements.insightGlobalUtilization.textContent = "-";
+  elements.insightSingleBlueprintRisk.textContent = "-";
+  elements.insightTopDrifted.textContent = "-";
+  elements.insightTopBlueprint.textContent = "-";
+
+  elements.insightsTopDriftedBody.innerHTML =
+    '<tr class="placeholder-row"><td colspan="5">Loading drift hotspot data...</td></tr>';
+  elements.insightsBlueprintMetricsBody.innerHTML =
+    '<tr class="placeholder-row"><td colspan="5">Loading blueprint risk metrics...</td></tr>';
+}
+
+function renderInsights() {
+  const insights = appState.insights;
+
+  if (!insights) {
+    elements.insightTotalAssignments.textContent = "-";
+    elements.insightDriftRate.textContent = "-";
+    elements.insightGlobalUtilization.textContent = "-";
+    elements.insightSingleBlueprintRisk.textContent = "-";
+    elements.insightTopDrifted.textContent = "-";
+    elements.insightTopBlueprint.textContent = "-";
+
+    elements.insightsTopDriftedBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">Run report to view drift hotspots.</td></tr>';
+    elements.insightsBlueprintMetricsBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">Run report to view blueprint risk ranking.</td></tr>';
+    return;
+  }
+
+  elements.insightTotalAssignments.textContent = numberFormat(insights.totalAssignments);
+  elements.insightDriftRate.textContent = formatPercent(insights.driftRate);
+  elements.insightGlobalUtilization.textContent = formatPercent(insights.globalUtilizationRate);
+  elements.insightSingleBlueprintRisk.textContent = numberFormat(insights.singleBlueprintConfigletCount);
+  elements.insightTopDrifted.textContent = numberFormat(insights.hotspotCount);
+  elements.insightTopBlueprint.textContent = insights.topBlueprint
+    ? `${insights.topBlueprint.name} (${numberFormat(insights.topBlueprint.totalAssignments)})`
+    : "-";
+
+  if (!insights.topDriftedRows.length) {
+    elements.insightsTopDriftedBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">No drift hotspots detected.</td></tr>';
+  } else {
+    elements.insightsTopDriftedBody.innerHTML = insights.topDriftedRows.map((row) => `
+      <tr>
+        <td><div class="cell-title">${escapeHtml(row.configletName)}</div></td>
+        <td><div class="cell-subtle">${renderGlobalCatalogIdLink(row.globalConfigletId)}</div></td>
+        <td><strong>${numberFormat(row.outOfSyncCount)}</strong></td>
+        <td>${numberFormat(row.blueprintCount)}</td>
+        <td>${formatPercent(row.driftRate)}</td>
+      </tr>
+    `).join("");
+  }
+
+  if (!insights.blueprintMetrics.length) {
+    elements.insightsBlueprintMetricsBody.innerHTML =
+      '<tr class="placeholder-row"><td colspan="5">No blueprint metrics available.</td></tr>';
+  } else {
+    elements.insightsBlueprintMetricsBody.innerHTML = insights.blueprintMetrics.map((row) => {
+      const url = buildBlueprintConfigletsPageUrl(row.blueprintId);
+      const name = url
+        ? `<a class="id-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.blueprintName)}</a>`
+        : escapeHtml(row.blueprintName);
+
+      return `
+        <tr>
+          <td><div class="cell-title">${name}</div></td>
+          <td>${numberFormat(row.totalAssignments)}</td>
+          <td>${numberFormat(row.driftedAssignments)}</td>
+          <td>${formatPercent(row.driftRate)}</td>
+          <td>${numberFormat(row.uniqueConfigletCount)}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+}
+
+function buildInsightsModel(report) {
+  const rows = Array.isArray(report?.rows) ? report.rows : [];
+  const unusedRows = Array.isArray(report?.unusedRows) ? report.unusedRows : [];
+
+  let totalAssignments = 0;
+  let totalDriftAssignments = 0;
+  const singleBlueprintConfigletCount = rows.filter((row) => row.blueprintCount === 1).length;
+
+  const usedGlobalIds = new Set(
+    rows
+      .map((row) => row.globalConfigletId)
+      .filter((id) => typeof id === "string" && id.trim() !== "")
+  );
+
+  const allGlobalIds = new Set(usedGlobalIds);
+  for (const row of unusedRows) {
+    if (row.globalConfigletId) {
+      allGlobalIds.add(row.globalConfigletId);
+    }
+  }
+
+  const blueprintStats = new Map();
+
+  for (const row of rows) {
+    totalAssignments += Number(row.assignmentCount) || 0;
+    totalDriftAssignments += Number(row.outOfSyncCount) || 0;
+
+    for (const entry of row.entries || []) {
+      const key = entry.blueprintId || "unknown";
+      if (!blueprintStats.has(key)) {
+        blueprintStats.set(key, {
+          blueprintId: entry.blueprintId || "",
+          blueprintName: entry.blueprintName || "Unknown blueprint",
+          totalAssignments: 0,
+          driftedAssignments: 0,
+          configletKeys: new Set()
+        });
+      }
+
+      const target = blueprintStats.get(key);
+      target.totalAssignments += 1;
+      target.configletKeys.add(row.rowKey);
+      if (entry.syncStatus === "OUT_OF_SYNC") {
+        target.driftedAssignments += 1;
+      }
+    }
+  }
+
+  const topDriftedRows = rows
+    .filter((row) => (row.outOfSyncCount || 0) > 0)
+    .map((row) => ({
+      rowKey: row.rowKey,
+      configletName: row.configletName,
+      globalConfigletId: row.globalConfigletId || "",
+      outOfSyncCount: row.outOfSyncCount || 0,
+      assignmentCount: row.assignmentCount || 0,
+      blueprintCount: row.blueprintCount || 0,
+      driftRate: row.assignmentCount ? row.outOfSyncCount / row.assignmentCount : 0
+    }))
+    .sort((a, b) => {
+      if (b.outOfSyncCount !== a.outOfSyncCount) {
+        return b.outOfSyncCount - a.outOfSyncCount;
+      }
+
+      if (b.blueprintCount !== a.blueprintCount) {
+        return b.blueprintCount - a.blueprintCount;
+      }
+
+      return a.configletName.localeCompare(b.configletName);
+    });
+
+  const blueprintMetrics = Array.from(blueprintStats.values())
+    .map((entry) => ({
+      blueprintId: entry.blueprintId,
+      blueprintName: entry.blueprintName,
+      totalAssignments: entry.totalAssignments,
+      driftedAssignments: entry.driftedAssignments,
+      driftRate: entry.totalAssignments ? entry.driftedAssignments / entry.totalAssignments : 0,
+      uniqueConfigletCount: entry.configletKeys.size
+    }))
+    .sort((a, b) => {
+      if (b.driftedAssignments !== a.driftedAssignments) {
+        return b.driftedAssignments - a.driftedAssignments;
+      }
+
+      if (b.totalAssignments !== a.totalAssignments) {
+        return b.totalAssignments - a.totalAssignments;
+      }
+
+      return a.blueprintName.localeCompare(b.blueprintName);
+    });
+
+  const topBlueprint = [...blueprintMetrics]
+    .sort((a, b) => b.totalAssignments - a.totalAssignments)[0] || null;
+
+  return {
+    generatedAt: report?.generatedAt || Date.now(),
+    totalAssignments,
+    totalDriftAssignments,
+    driftRate: totalAssignments ? totalDriftAssignments / totalAssignments : 0,
+    usedGlobalConfiglets: usedGlobalIds.size,
+    totalGlobalConfiglets: allGlobalIds.size,
+    globalUtilizationRate: allGlobalIds.size ? usedGlobalIds.size / allGlobalIds.size : 0,
+    singleBlueprintConfigletCount,
+    hotspotCount: topDriftedRows.length,
+    topBlueprint,
+    topDriftedRows: topDriftedRows.slice(0, 20),
+    blueprintMetrics
+  };
 }
 
 function renderTableLoading() {
@@ -978,6 +1249,105 @@ function exportUnusedCsv() {
   showToast("Unused CSV exported");
 }
 
+function exportInsightsSummaryCsv() {
+  if (!appState.insights) {
+    showError("Run report first to export insights.", "insights");
+    return;
+  }
+
+  const insights = appState.insights;
+  const row = {
+    generated_at: new Date(insights.generatedAt).toISOString(),
+    total_assignments: insights.totalAssignments,
+    drifted_assignments: insights.totalDriftAssignments,
+    drift_rate: formatPercent(insights.driftRate),
+    used_global_configlets: insights.usedGlobalConfiglets,
+    total_global_configlets: insights.totalGlobalConfiglets,
+    global_utilization_rate: formatPercent(insights.globalUtilizationRate),
+    single_blueprint_configlets: insights.singleBlueprintConfigletCount,
+    drift_hotspot_count: insights.hotspotCount,
+    top_blueprint_name: insights.topBlueprint?.blueprintName || "",
+    top_blueprint_assignments: insights.topBlueprint?.totalAssignments || 0
+  };
+
+  downloadCsv(
+    `dcd-insights-summary-${buildTimestampSuffix()}.csv`,
+    [row],
+    [
+      "generated_at",
+      "total_assignments",
+      "drifted_assignments",
+      "drift_rate",
+      "used_global_configlets",
+      "total_global_configlets",
+      "global_utilization_rate",
+      "single_blueprint_configlets",
+      "drift_hotspot_count",
+      "top_blueprint_name",
+      "top_blueprint_assignments"
+    ]
+  );
+
+  showToast("Insights summary CSV exported");
+}
+
+function exportInsightsBlueprintCsv() {
+  if (!appState.insights || !appState.insights.blueprintMetrics.length) {
+    showError("Run report first to export blueprint metrics.", "insights");
+    return;
+  }
+
+  const rows = appState.insights.blueprintMetrics.map((row) => ({
+    blueprint_name: row.blueprintName,
+    blueprint_id: row.blueprintId,
+    blueprint_url: buildBlueprintConfigletsPageUrl(row.blueprintId),
+    assignments: row.totalAssignments,
+    drifted: row.driftedAssignments,
+    drift_rate: formatPercent(row.driftRate),
+    unique_configlets: row.uniqueConfigletCount
+  }));
+
+  downloadCsv(
+    `dcd-insights-blueprints-${buildTimestampSuffix()}.csv`,
+    rows,
+    [
+      "blueprint_name",
+      "blueprint_id",
+      "blueprint_url",
+      "assignments",
+      "drifted",
+      "drift_rate",
+      "unique_configlets"
+    ]
+  );
+
+  showToast("Blueprint metrics CSV exported");
+}
+
+function exportInsightsJson() {
+  if (!appState.insights) {
+    showError("Run report first to export insights JSON.", "insights");
+    return;
+  }
+
+  const payload = {
+    generatedAt: new Date(appState.insights.generatedAt).toISOString(),
+    insights: appState.insights,
+    reportSummary: appState.report
+      ? {
+          blueprintCount: appState.report.blueprintCount,
+          assignmentCount: appState.report.assignmentCount,
+          uniqueConfigletCount: appState.report.uniqueConfigletCount,
+          outOfSyncConfigletCount: appState.report.outOfSyncConfigletCount,
+          unusedConfigletCount: appState.report.unusedConfigletCount
+        }
+      : null
+  };
+
+  downloadJson(`dcd-insights-${buildTimestampSuffix()}.json`, payload);
+  showToast("Insights JSON exported");
+}
+
 function downloadCsv(filename, rows, columns) {
   const header = columns.join(",");
   const body = rows
@@ -986,6 +1356,21 @@ function downloadCsv(filename, rows, columns) {
 
   const csv = `${header}\n${body}`;
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+function downloadJson(filename, payload) {
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
 
   const link = document.createElement("a");
@@ -1115,7 +1500,13 @@ function splitLines(text) {
 }
 
 function showError(message, scope) {
-  const target = scope === "home" ? elements.homeErrorBanner : elements.errorBanner;
+  let target = elements.errorBanner;
+  if (scope === "home") {
+    target = elements.homeErrorBanner;
+  } else if (scope === "insights") {
+    target = elements.insightsErrorBanner;
+  }
+
   target.textContent = message;
   target.classList.remove("hidden");
 }
@@ -1129,6 +1520,11 @@ function clearError(scope) {
   if (scope === "report" || !scope) {
     elements.errorBanner.textContent = "";
     elements.errorBanner.classList.add("hidden");
+  }
+
+  if (scope === "insights" || !scope) {
+    elements.insightsErrorBanner.textContent = "";
+    elements.insightsErrorBanner.classList.add("hidden");
   }
 }
 
@@ -1230,6 +1626,10 @@ function formatRelative(timestamp) {
 
 function numberFormat(value) {
   return new Intl.NumberFormat().format(Number(value) || 0);
+}
+
+function formatPercent(value) {
+  return `${(Number(value || 0) * 100).toFixed(1)}%`;
 }
 
 function sleep(ms) {

@@ -24,6 +24,10 @@
             <span class="tool-short">C</span>
             <span class="tool-text">Configlet Audit</span>
           </button>
+          <button id="navInsights" class="tool-link" type="button" aria-label="Data Insights" title="Data Insights">
+            <span class="tool-short">D</span>
+            <span class="tool-text">Data Insights</span>
+          </button>
         </nav>
       </aside>
 
@@ -55,6 +59,10 @@
             <button id="openConfigletsBtn" class="option-card" type="button">
               <h3>Configlet Audit</h3>
               <p>Coverage by blueprint, global sync checks, and expandable diffs.</p>
+            </button>
+            <button id="openInsightsBtn" class="option-card" type="button">
+              <h3>Data Insights</h3>
+              <p>Operational metrics, drift hotspots, blueprint risk ranking, and data exports.</p>
             </button>
           </section>
 
@@ -183,6 +191,105 @@
           <footer class="panel-footer">
             <span id="updatedAt">No data loaded</span>
             <span id="toast" class="toast hidden">Export complete</span>
+          </footer>
+        </section>
+
+        <section id="insightsView" class="view hidden">
+          <header class="panel-header compact">
+            <div class="title-row">
+              <button id="backHomeFromInsightsButton" class="btn btn-secondary" type="button">Back to Home</button>
+              <div>
+                <h2>Data Insights</h2>
+                <p class="subtitle">Cross-blueprint operational metrics and drift analytics built from your live Apstra data.</p>
+              </div>
+            </div>
+            <button id="loadInsightsButton" class="btn btn-primary" type="button">Refresh</button>
+          </header>
+
+          <section id="insightsErrorBanner" class="error-banner hidden" role="alert"></section>
+
+          <section class="summary-grid insights-grid" id="insightsSummaryGrid">
+            <article>
+              <h3>Total Assignments</h3>
+              <p id="insightTotalAssignments">-</p>
+            </article>
+            <article>
+              <h3>Drift Rate</h3>
+              <p id="insightDriftRate">-</p>
+            </article>
+            <article>
+              <h3>Global Utilization</h3>
+              <p id="insightGlobalUtilization">-</p>
+            </article>
+            <article>
+              <h3>Single-BP Risk</h3>
+              <p id="insightSingleBlueprintRisk">-</p>
+            </article>
+            <article>
+              <h3>Drift Hotspots</h3>
+              <p id="insightTopDrifted">-</p>
+            </article>
+            <article>
+              <h3>Top Blueprint Load</h3>
+              <p id="insightTopBlueprint">-</p>
+            </article>
+          </section>
+
+          <section>
+            <div class="section-heading-row">
+              <h3 class="section-heading">Top Drifted Configlets</h3>
+              <div class="connection-actions">
+                <button id="exportInsightsCsvButton" class="btn btn-secondary" type="button">Export Insights CSV</button>
+                <button id="exportInsightsJsonButton" class="btn btn-secondary" type="button">Export JSON</button>
+              </div>
+            </div>
+            <div class="table-wrap table-wrap-active" aria-live="polite">
+              <table class="active-table insights-table">
+                <thead>
+                  <tr>
+                    <th>Configlet</th>
+                    <th>Global Catalog ID</th>
+                    <th>Drifted Assignments</th>
+                    <th>Blueprints</th>
+                    <th>Drift Rate</th>
+                  </tr>
+                </thead>
+                <tbody id="insightsTopDriftedBody">
+                  <tr class="placeholder-row">
+                    <td colspan="5">Load insights to view drift hotspots.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section>
+            <div class="section-heading-row">
+              <h3 class="section-heading">Blueprint Risk Ranking</h3>
+              <button id="exportInsightsBlueprintCsvButton" class="btn btn-secondary" type="button">Export Blueprint CSV</button>
+            </div>
+            <div class="table-wrap table-wrap-active" aria-live="polite">
+              <table class="active-table insights-table">
+                <thead>
+                  <tr>
+                    <th>Blueprint</th>
+                    <th>Assignments</th>
+                    <th>Drifted</th>
+                    <th>Drift Rate</th>
+                    <th>Unique Configlets</th>
+                  </tr>
+                </thead>
+                <tbody id="insightsBlueprintMetricsBody">
+                  <tr class="placeholder-row">
+                    <td colspan="5">Load insights to view blueprint risk ranking.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <footer class="panel-footer">
+            <span id="insightsUpdatedAt">No data loaded</span>
           </footer>
         </section>
 
