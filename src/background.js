@@ -115,6 +115,8 @@ async function handleMessage(request) {
       return getConnectionStatus();
     case "runConfigletsReport":
       return runConfigletsReport();
+    case "runGatewayConnectionsReport":
+      return runGatewayConnectionsReport();
     case "refreshConfigletFromGlobal":
       return refreshConfigletFromGlobal(request);
     case "refreshActiveTabTraffic":
@@ -439,6 +441,36 @@ async function runConfigletsReport() {
   };
 }
 
+async function runGatewayConnectionsReport() {
+  const connection = await getConnectionStatus();
+
+  if (connection.state === "NOT_ON_DCD_TAB") {
+    throw createError("Open a Data Center Director tab first.", "NOT_ON_DCD_TAB");
+  }
+
+  if (connection.state === "WAITING_FOR_TOKEN") {
+    throw createError(
+      "Token/auth headers not captured yet. Generate API traffic, then Refresh Status.",
+      "TOKEN_MISSING"
+    );
+  }
+
+  if (connection.state !== "READY") {
+    throw createError("Connection is not ready.", "NOT_READY");
+  }
+
+  const tokenInfo = tokenCache.get(connection.origin) || {};
+  const token = tokenInfo.token || null;
+  const authHeaders = sanitizeCapturedHeaders(tokenInfo.authHeaders || {});
+
+  const report = await fetchGatewayConnectionsReport(connection, token, authHeaders);
+
+  return {
+    connection,
+    report
+  };
+}
+
 async function refreshConfigletFromGlobal(request) {
   const connection = await getConnectionStatus();
 
@@ -648,6 +680,322 @@ async function fetchConfigletsByBlueprint(connection, token, authHeaders) {
     partialFailures: failures,
     rows: groupedRows,
     unusedRows
+  };
+}
+
+async function fetchGatewayConnectionsReport(connection, token, authHeaders) {
+  const blueprints = (await fetchCollection(connection, `${API_ROOT}/blueprints`, token, authHeaders))
+    .map(normalizeBlueprint)
+    .filter((item) => item.id);
+
+  const failures = [];
+
+  const settledResults = await mapWithConcurrency(blueprints, 4, async (blueprint) => {
+    const encodedId = encodeURIComponent(blueprint.id);
+
+    const remoteGatewayPayload = await apiGet(
+      connection,
+      `${API_ROOT}/blueprints/${encodedId}/remote_gateways`,
+      token,
+      authHeaders
+    );
+
+    const remoteGateways = normalizeRemoteGatewayCollection(remoteGatewayPayload);
+    const bgpFacts = await fetchBlueprintBgpSessionFacts(connection, blueprint.id, token, authHeaders);
+
+    return {
+      blueprint,
+      remoteGateways,
+      bgpSessions: bgpFacts.sessions,
+      bgpPairKeys: bgpFacts.bgpPairKeys
+    };
+  });
+
+  const blueprintFacts = [];
+  for (const result of settledResults) {
+    if (result.status === "fulfilled") {
+      blueprintFacts.push(result.value);
+      continue;
+    }
+
+    const context = result.reason?.context;
+    failures.push({
+      blueprintId: context?.blueprintId || "unknown",
+      blueprintName: context?.blueprintName || "Unknown blueprint",
+      message: result.reason?.message || "Failed to build gateway facts"
+    });
+  }
+
+  const blueprintFactsById = new Map(blueprintFacts.map((item) => [item.blueprint.id, item]));
+  const localEvpnIpIndex = new Map();
+
+  for (const fact of blueprintFacts) {
+    for (const gateway of fact.remoteGateways) {
+      for (const ip of gateway.localEvpnIps) {
+        if (!localEvpnIpIndex.has(ip)) {
+          localEvpnIpIndex.set(ip, []);
+        }
+
+        localEvpnIpIndex.get(ip).push({
+          blueprintId: fact.blueprint.id,
+          blueprintName: fact.blueprint.name,
+          gateway
+        });
+      }
+    }
+  }
+
+  const connectionRowsByKey = new Map();
+  const unmatchedRows = [];
+
+  for (const sourceFact of blueprintFacts) {
+    for (const sourceGateway of sourceFact.remoteGateways) {
+      const sourceGatewayIp = sourceGateway.gwIp;
+
+      if (!sourceGatewayIp) {
+        unmatchedRows.push({
+          rowKey: `missing-ip:${sourceFact.blueprint.id}:${sourceGateway.id || sourceGateway.name}`,
+          blueprintId: sourceFact.blueprint.id,
+          blueprintName: sourceFact.blueprint.name,
+          gatewayId: sourceGateway.id,
+          gatewayName: sourceGateway.name,
+          gatewayIp: "",
+          localNodeLabels: sourceGateway.localNodeLabels,
+          localEvpnIps: sourceGateway.localEvpnIps,
+          reason: "Gateway has no gw_ip configured."
+        });
+        continue;
+      }
+
+      const candidates = (localEvpnIpIndex.get(sourceGatewayIp) || [])
+        .filter((candidate) => candidate.blueprintId !== sourceFact.blueprint.id);
+
+      if (candidates.length === 0) {
+        unmatchedRows.push({
+          rowKey: `unmatched:${sourceFact.blueprint.id}:${sourceGateway.id || sourceGateway.name}:${sourceGatewayIp}`,
+          blueprintId: sourceFact.blueprint.id,
+          blueprintName: sourceFact.blueprint.name,
+          gatewayId: sourceGateway.id,
+          gatewayName: sourceGateway.name,
+          gatewayIp: sourceGatewayIp,
+          localNodeLabels: sourceGateway.localNodeLabels,
+          localEvpnIps: sourceGateway.localEvpnIps,
+          reason: "No blueprint local gateway EVPN internal RD IP matches this gw_ip."
+        });
+        continue;
+      }
+
+      for (const candidate of candidates) {
+        const targetFact = blueprintFactsById.get(candidate.blueprintId);
+        if (!targetFact) {
+          continue;
+        }
+
+        const targetGateway = candidate.gateway;
+        const reciprocalConfig = Boolean(
+          targetGateway?.gwIp && sourceGateway.localEvpnIps.includes(targetGateway.gwIp)
+        );
+
+        const sharedBgpPairs = intersectStringArrays(sourceFact.bgpPairKeys, targetFact.bgpPairKeys);
+        const hasBgpEvidence = sharedBgpPairs.length > 0;
+
+        const rowKey = buildGatewayConnectionKey(
+          sourceFact.blueprint.id,
+          sourceGateway.id || sourceGateway.name || sourceGateway.gwIp || "unknown",
+          targetFact.blueprint.id,
+          targetGateway.id || targetGateway.name || targetGateway.gwIp || "unknown"
+        );
+
+        const existing = connectionRowsByKey.get(rowKey);
+        if (existing) {
+          existing.reciprocalConfig = existing.reciprocalConfig || reciprocalConfig;
+          existing.hasBgpEvidence = existing.hasBgpEvidence || hasBgpEvidence;
+          existing.sharedBgpPairs = dedupeStrings(existing.sharedBgpPairs.concat(sharedBgpPairs));
+          continue;
+        }
+
+        connectionRowsByKey.set(rowKey, {
+          rowKey,
+          sourceBlueprintId: sourceFact.blueprint.id,
+          sourceBlueprintName: sourceFact.blueprint.name,
+          sourceGatewayId: sourceGateway.id,
+          sourceGatewayName: sourceGateway.name,
+          sourceGatewayIp,
+          sourceGatewayAsn: sourceGateway.gwAsn,
+          sourceLocalNodeLabels: sourceGateway.localNodeLabels,
+          sourceLocalEvpnIps: sourceGateway.localEvpnIps,
+          targetBlueprintId: targetFact.blueprint.id,
+          targetBlueprintName: targetFact.blueprint.name,
+          targetGatewayId: targetGateway.id,
+          targetGatewayName: targetGateway.name,
+          targetGatewayIp: targetGateway.gwIp,
+          targetGatewayAsn: targetGateway.gwAsn,
+          targetLocalNodeLabels: targetGateway.localNodeLabels,
+          targetLocalEvpnIps: targetGateway.localEvpnIps,
+          reciprocalConfig,
+          hasBgpEvidence,
+          sharedBgpPairs
+        });
+      }
+    }
+  }
+
+  const connectionRows = Array.from(connectionRowsByKey.values())
+    .map((row) => ({
+      ...row,
+      confidence: buildGatewayConnectionConfidence(row.reciprocalConfig, row.hasBgpEvidence)
+    }))
+    .sort((a, b) => {
+      const rankDiff = gatewayConfidenceRank(b.confidence) - gatewayConfidenceRank(a.confidence);
+      if (rankDiff !== 0) {
+        return rankDiff;
+      }
+
+      const sourceDiff = a.sourceBlueprintName.localeCompare(b.sourceBlueprintName);
+      if (sourceDiff !== 0) {
+        return sourceDiff;
+      }
+
+      return a.targetBlueprintName.localeCompare(b.targetBlueprintName);
+    });
+
+  const blueprintRows = blueprintFacts
+    .map((fact) => ({
+      blueprintId: fact.blueprint.id,
+      blueprintName: fact.blueprint.name,
+      remoteGatewayCount: fact.remoteGateways.length,
+      bgpSessionCount: fact.bgpSessions.length,
+      bgpPairCount: fact.bgpPairKeys.length
+    }))
+    .sort((a, b) => b.remoteGatewayCount - a.remoteGatewayCount || a.blueprintName.localeCompare(b.blueprintName));
+
+  const totalRemoteGateways = blueprintRows.reduce((sum, row) => sum + row.remoteGatewayCount, 0);
+  const blueprintsWithGateways = blueprintRows.filter((row) => row.remoteGatewayCount > 0).length;
+  const blueprintsWithBgp = blueprintRows.filter((row) => row.bgpSessionCount > 0).length;
+
+  const blueprintPairKeys = new Set(
+    connectionRows.map((row) => buildBlueprintPairKey(row.sourceBlueprintId, row.targetBlueprintId))
+  );
+
+  return {
+    generatedAt: Date.now(),
+    blueprintCount: blueprints.length,
+    blueprintsWithGateways,
+    blueprintsWithBgp,
+    totalRemoteGateways,
+    connectionCount: connectionRows.length,
+    blueprintPairCount: blueprintPairKeys.size,
+    reciprocalConnectionCount: connectionRows.filter((row) => row.reciprocalConfig).length,
+    bgpBackedConnectionCount: connectionRows.filter((row) => row.hasBgpEvidence).length,
+    unmatchedGatewayCount: unmatchedRows.length,
+    partialFailures: failures,
+    rows: connectionRows,
+    unmatchedRows,
+    blueprintRows
+  };
+}
+
+async function fetchBlueprintBgpSessionFacts(connection, blueprintId, token, authHeaders) {
+  const encodedId = encodeURIComponent(blueprintId);
+  const query = [
+    "{",
+    "  protocol_session_nodes { id routing instantiates_targets { id node_type } }",
+    "  protocol_endpoint_nodes { id layered_over_interface_targets { id node_type } layered_over_ip_endpoint_targets { id node_type } }",
+    "  interface_nodes { id ipv4_addr }",
+    "  ip_endpoint_nodes { id ipv4_addr }",
+    "}"
+  ].join(" ");
+
+  const payload = await apiPost(
+    connection,
+    `${API_ROOT}/blueprints/${encodedId}/ql`,
+    { query },
+    token,
+    authHeaders
+  );
+
+  const data = payload?.data && typeof payload.data === "object"
+    ? payload.data
+    : payload && typeof payload === "object"
+      ? payload
+      : {};
+
+  const sessionNodes = Array.isArray(data.protocol_session_nodes) ? data.protocol_session_nodes : [];
+  const endpointNodes = Array.isArray(data.protocol_endpoint_nodes) ? data.protocol_endpoint_nodes : [];
+  const interfaceNodes = Array.isArray(data.interface_nodes) ? data.interface_nodes : [];
+  const ipEndpointNodes = Array.isArray(data.ip_endpoint_nodes) ? data.ip_endpoint_nodes : [];
+
+  const interfaceIpv4ById = new Map(
+    interfaceNodes.map((item) => [item?.id, normalizeIpAddress(item?.ipv4_addr)])
+  );
+
+  const ipEndpointIpv4ById = new Map(
+    ipEndpointNodes.map((item) => [item?.id, normalizeIpAddress(item?.ipv4_addr)])
+  );
+
+  const endpointIpv4ById = new Map();
+
+  for (const endpoint of endpointNodes) {
+    const endpointId = asString(endpoint?.id);
+    if (!endpointId) {
+      continue;
+    }
+
+    let ip = "";
+    const layeredInterfaceId = firstRelationshipTargetId(endpoint?.layered_over_interface_targets, "interface");
+    if (layeredInterfaceId) {
+      ip = interfaceIpv4ById.get(layeredInterfaceId) || "";
+    }
+
+    if (!ip) {
+      const layeredIpEndpointId = firstRelationshipTargetId(endpoint?.layered_over_ip_endpoint_targets, "ip_endpoint");
+      if (layeredIpEndpointId) {
+        ip = ipEndpointIpv4ById.get(layeredIpEndpointId) || "";
+      }
+    }
+
+    endpointIpv4ById.set(endpointId, ip);
+  }
+
+  const sessions = [];
+  const bgpPairKeys = [];
+
+  for (const session of sessionNodes) {
+    if (normalizeLookupKey(asString(session?.routing)) !== "bgp") {
+      continue;
+    }
+
+    const endpointIds = Array.isArray(session?.instantiates_targets)
+      ? session.instantiates_targets
+        .filter((item) => item?.node_type === "protocol_endpoint")
+        .map((item) => asString(item?.id))
+        .filter(Boolean)
+      : [];
+
+    const endpointIps = dedupeStrings(
+      endpointIds
+        .map((endpointId) => endpointIpv4ById.get(endpointId) || "")
+        .filter(Boolean)
+    );
+
+    const pairKey = buildIpPairKey(endpointIps);
+
+    sessions.push({
+      id: asString(session?.id),
+      routing: asString(session?.routing),
+      endpointIds,
+      endpointIps,
+      pairKey
+    });
+
+    if (pairKey) {
+      bgpPairKeys.push(pairKey);
+    }
+  }
+
+  return {
+    sessions,
+    bgpPairKeys: dedupeStrings(bgpPairKeys)
   };
 }
 
@@ -1249,6 +1597,56 @@ function normalizeConfiglet(value, options = {}) {
   };
 }
 
+function normalizeRemoteGatewayCollection(payload) {
+  const values = Array.isArray(payload?.remote_gateways)
+    ? payload.remote_gateways
+    : Array.isArray(payload)
+      ? payload
+      : [];
+
+  return values
+    .map(normalizeRemoteGateway)
+    .filter((item) => item.gwIp || item.id || item.name);
+}
+
+function normalizeRemoteGateway(value) {
+  const source = value && typeof value === "object" ? value : {};
+
+  const localGwNodesRaw = Array.isArray(source.local_gw_nodes) ? source.local_gw_nodes : [];
+  const localGwNodes = localGwNodesRaw.map((node) => {
+    const nodeSource = node && typeof node === "object" ? node : {};
+    return {
+      label: firstString(nodeSource, ["label", "name", "display_name"]) || "",
+      nodeId: firstString(nodeSource, ["node_id", "id", "uuid"]) || "",
+      role: firstString(nodeSource, ["role"]) || "",
+      evpnInternalRd: firstString(nodeSource, ["evpn_internal_rd"]) || "",
+      evpnInterconnectRd: firstString(nodeSource, ["evpn_interconnect_rd"]) || ""
+    };
+  });
+
+  const localEvpnIps = dedupeStrings(
+    localGwNodes
+      .map((node) => extractIpFromRouteDistinguisher(node.evpnInternalRd))
+      .filter(Boolean)
+  );
+
+  return {
+    id: firstString(source, ["id", "gateway_id", "uuid"]) || "",
+    name:
+      firstString(source, ["gw_name", "label", "name", "display_name"]) ||
+      firstString(source, ["id", "gateway_id", "uuid"]) ||
+      "Unnamed gateway",
+    gwIp: normalizeIpAddress(firstString(source, ["gw_ip", "ip", "gateway_ip"]) || ""),
+    gwAsn: asFiniteNumber(source.gw_asn),
+    ttl: asFiniteNumber(source.ttl),
+    keepaliveTimer: asFiniteNumber(source.keepalive_timer),
+    holdtimeTimer: asFiniteNumber(source.holdtime_timer),
+    localGwNodes,
+    localNodeLabels: dedupeStrings(localGwNodes.map((node) => node.label).filter(Boolean)),
+    localEvpnIps
+  };
+}
+
 function normalizeGenerator(generator) {
   const source = generator && typeof generator === "object" ? generator : {};
 
@@ -1492,6 +1890,113 @@ function normalizeLookupKey(value) {
   }
 
   return value.trim().toLowerCase();
+}
+
+function normalizeIpAddress(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const base = trimmed.includes("/") ? trimmed.split("/")[0] : trimmed;
+  return base.trim();
+}
+
+function extractIpFromRouteDistinguisher(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  return normalizeIpAddress(trimmed.split(":")[0] || "");
+}
+
+function firstRelationshipTargetId(values, expectedNodeType) {
+  if (!Array.isArray(values)) {
+    return "";
+  }
+
+  const match = values.find((item) => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+
+    if (!expectedNodeType) {
+      return Boolean(asString(item.id));
+    }
+
+    return normalizeLookupKey(asString(item.node_type)) === normalizeLookupKey(expectedNodeType);
+  });
+
+  return asString(match?.id);
+}
+
+function buildIpPairKey(endpointIps) {
+  const uniqueIps = dedupeStrings(endpointIps.map((ip) => normalizeIpAddress(ip)).filter(Boolean));
+  if (uniqueIps.length < 2) {
+    return "";
+  }
+
+  const sorted = [...uniqueIps].sort((a, b) => a.localeCompare(b));
+  return `${sorted[0]}|${sorted[1]}`;
+}
+
+function dedupeStrings(values) {
+  return Array.from(new Set((values || []).filter((value) => typeof value === "string" && value.trim() !== "")));
+}
+
+function intersectStringArrays(left, right) {
+  const rightSet = new Set(right || []);
+  return dedupeStrings((left || []).filter((item) => rightSet.has(item)));
+}
+
+function buildGatewayConnectionKey(sourceBlueprintId, sourceGatewayKey, targetBlueprintId, targetGatewayKey) {
+  const left = `${sourceBlueprintId}:${sourceGatewayKey}`;
+  const right = `${targetBlueprintId}:${targetGatewayKey}`;
+  return left < right ? `${left}<>${right}` : `${right}<>${left}`;
+}
+
+function buildBlueprintPairKey(leftBlueprintId, rightBlueprintId) {
+  return leftBlueprintId < rightBlueprintId
+    ? `${leftBlueprintId}|${rightBlueprintId}`
+    : `${rightBlueprintId}|${leftBlueprintId}`;
+}
+
+function buildGatewayConnectionConfidence(reciprocalConfig, hasBgpEvidence) {
+  if (reciprocalConfig && hasBgpEvidence) {
+    return "high";
+  }
+
+  if (reciprocalConfig || hasBgpEvidence) {
+    return "medium";
+  }
+
+  return "low";
+}
+
+function gatewayConfidenceRank(confidence) {
+  if (confidence === "high") {
+    return 3;
+  }
+
+  if (confidence === "medium") {
+    return 2;
+  }
+
+  return 1;
+}
+
+function asFiniteNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function normalizeMultilineText(value) {

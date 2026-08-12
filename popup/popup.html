@@ -24,9 +24,9 @@
             <span class="tool-short">C</span>
             <span class="tool-text">Configlet Audit</span>
           </button>
-          <button id="navInsights" class="tool-link" type="button" aria-label="Data Insights" title="Data Insights">
-            <span class="tool-short">D</span>
-            <span class="tool-text">Data Insights</span>
+          <button id="navGateways" class="tool-link" type="button" aria-label="Gateway Links" title="Gateway Links">
+            <span class="tool-short">G</span>
+            <span class="tool-text">Gateway Links</span>
           </button>
         </nav>
       </aside>
@@ -60,13 +60,128 @@
               <h3>Configlet Audit</h3>
               <p>Coverage by blueprint, global sync checks, and expandable diffs.</p>
             </button>
-            <button id="openInsightsBtn" class="option-card" type="button">
-              <h3>Data Insights</h3>
-              <p>Operational metrics, drift hotspots, blueprint risk ranking, and data exports.</p>
+            <button id="openGatewaysBtn" class="option-card" type="button">
+              <h3>Gateway Links</h3>
+              <p>Find inter-blueprint gateway relationships and BGP-backed evidence.</p>
             </button>
           </section>
 
           <p id="homeHint" class="hint-text">Waiting for token/auth capture before tools can be opened.</p>
+        </section>
+
+        <section id="gatewaysView" class="view hidden">
+          <header class="panel-header compact">
+            <div class="title-row">
+              <button id="backHomeFromGatewaysButton" class="btn btn-secondary" type="button">Back to Home</button>
+              <div>
+                <h2>Gateway Links</h2>
+                <p class="subtitle">Correlate remote gateway config across blueprints, then verify with BGP session evidence.</p>
+              </div>
+            </div>
+            <button id="loadGatewaysButton" class="btn btn-primary" type="button">Refresh</button>
+          </header>
+
+          <section id="gatewaysErrorBanner" class="error-banner hidden" role="alert"></section>
+
+          <section class="summary-grid" id="gatewaySummaryGrid">
+            <article>
+              <h3>Blueprints</h3>
+              <p id="gatewaySummaryBlueprints">-</p>
+            </article>
+            <article>
+              <h3>Remote Gateways</h3>
+              <p id="gatewaySummaryGateways">-</p>
+            </article>
+            <article>
+              <h3>Connections</h3>
+              <p id="gatewaySummaryConnections">-</p>
+            </article>
+            <article>
+              <h3>Blueprint Pairs</h3>
+              <p id="gatewaySummaryPairs">-</p>
+            </article>
+            <article>
+              <h3>BGP Backed</h3>
+              <p id="gatewaySummaryConfirmed">-</p>
+            </article>
+          </section>
+
+          <section>
+            <div class="section-heading-row gateway-diagram-header">
+              <h3 class="section-heading">Blueprint Connectivity Diagram</h3>
+              <div class="gateway-diagram-controls" role="group" aria-label="Diagram zoom controls">
+                <button id="gatewayZoomOutButton" class="btn btn-secondary btn-mini" type="button" title="Zoom Out">-</button>
+                <button id="gatewayZoomInButton" class="btn btn-secondary btn-mini" type="button" title="Zoom In">+</button>
+                <button id="gatewayZoomResetButton" class="btn btn-secondary btn-mini" type="button" title="Reset View">Reset</button>
+              </div>
+            </div>
+            <div id="gatewayDiagram" class="gateway-diagram-wrap" aria-live="polite">
+              <div class="gateway-diagram-empty">Run refresh to render blueprint connectivity.</div>
+            </div>
+            <p id="gatewayDiagramCaption" class="gateway-diagram-caption">Edge color: green = high confidence, amber = medium, gray = low.</p>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Detected Inter-Blueprint Gateway Connections</h3>
+            <div class="table-wrap table-wrap-active" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-blueprints" />
+                  <col class="col-configlet" />
+                  <col class="col-blueprints" />
+                  <col class="col-configlet" />
+                  <col class="col-sync" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Source Blueprint</th>
+                    <th>Source Gateway</th>
+                    <th>Target Blueprint</th>
+                    <th>Target Gateway</th>
+                    <th>Correlation Evidence</th>
+                  </tr>
+                </thead>
+                <tbody id="gatewayConnectionsBody">
+                  <tr class="placeholder-row">
+                    <td colspan="5">Run refresh to load gateway connections.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Unmatched Remote Gateway Entries</h3>
+            <div class="table-wrap table-wrap-unused" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-blueprints" />
+                  <col class="col-configlet" />
+                  <col class="col-configlet" />
+                  <col class="col-blueprints" />
+                  <col class="col-sync" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Blueprint</th>
+                    <th>Gateway</th>
+                    <th>Remote Gateway IP</th>
+                    <th>Local GW Nodes / EVPN RD IPs</th>
+                    <th>Why Unmatched</th>
+                  </tr>
+                </thead>
+                <tbody id="gatewayUnmatchedBody">
+                  <tr class="placeholder-row">
+                    <td colspan="5">Run refresh to inspect unmatched gateway entries.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <footer class="panel-footer">
+            <span id="gatewaysUpdatedAt">No data loaded</span>
+          </footer>
         </section>
 
         <section id="configletsView" class="view hidden">
@@ -191,105 +306,6 @@
           <footer class="panel-footer">
             <span id="updatedAt">No data loaded</span>
             <span id="toast" class="toast hidden">Export complete</span>
-          </footer>
-        </section>
-
-        <section id="insightsView" class="view hidden">
-          <header class="panel-header compact">
-            <div class="title-row">
-              <button id="backHomeFromInsightsButton" class="btn btn-secondary" type="button">Back to Home</button>
-              <div>
-                <h2>Data Insights</h2>
-                <p class="subtitle">Cross-blueprint operational metrics and drift analytics built from your live Apstra data.</p>
-              </div>
-            </div>
-            <button id="loadInsightsButton" class="btn btn-primary" type="button">Refresh</button>
-          </header>
-
-          <section id="insightsErrorBanner" class="error-banner hidden" role="alert"></section>
-
-          <section class="summary-grid insights-grid" id="insightsSummaryGrid">
-            <article>
-              <h3>Total Assignments</h3>
-              <p id="insightTotalAssignments">-</p>
-            </article>
-            <article>
-              <h3>Drift Rate</h3>
-              <p id="insightDriftRate">-</p>
-            </article>
-            <article>
-              <h3>Global Utilization</h3>
-              <p id="insightGlobalUtilization">-</p>
-            </article>
-            <article>
-              <h3>Single-BP Risk</h3>
-              <p id="insightSingleBlueprintRisk">-</p>
-            </article>
-            <article>
-              <h3>Drift Hotspots</h3>
-              <p id="insightTopDrifted">-</p>
-            </article>
-            <article>
-              <h3>Top Blueprint Load</h3>
-              <p id="insightTopBlueprint">-</p>
-            </article>
-          </section>
-
-          <section>
-            <div class="section-heading-row">
-              <h3 class="section-heading">Top Drifted Configlets</h3>
-              <div class="connection-actions">
-                <button id="exportInsightsCsvButton" class="btn btn-secondary" type="button">Export Insights CSV</button>
-                <button id="exportInsightsJsonButton" class="btn btn-secondary" type="button">Export JSON</button>
-              </div>
-            </div>
-            <div class="table-wrap table-wrap-active" aria-live="polite">
-              <table class="active-table insights-table">
-                <thead>
-                  <tr>
-                    <th>Configlet</th>
-                    <th>Global Catalog ID</th>
-                    <th>Drifted Assignments</th>
-                    <th>Blueprints</th>
-                    <th>Drift Rate</th>
-                  </tr>
-                </thead>
-                <tbody id="insightsTopDriftedBody">
-                  <tr class="placeholder-row">
-                    <td colspan="5">Load insights to view drift hotspots.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section>
-            <div class="section-heading-row">
-              <h3 class="section-heading">Blueprint Risk Ranking</h3>
-              <button id="exportInsightsBlueprintCsvButton" class="btn btn-secondary" type="button">Export Blueprint CSV</button>
-            </div>
-            <div class="table-wrap table-wrap-active" aria-live="polite">
-              <table class="active-table insights-table">
-                <thead>
-                  <tr>
-                    <th>Blueprint</th>
-                    <th>Assignments</th>
-                    <th>Drifted</th>
-                    <th>Drift Rate</th>
-                    <th>Unique Configlets</th>
-                  </tr>
-                </thead>
-                <tbody id="insightsBlueprintMetricsBody">
-                  <tr class="placeholder-row">
-                    <td colspan="5">Load insights to view blueprint risk ranking.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <footer class="panel-footer">
-            <span id="insightsUpdatedAt">No data loaded</span>
           </footer>
         </section>
 
