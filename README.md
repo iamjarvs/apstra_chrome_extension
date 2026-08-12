@@ -2,6 +2,10 @@
 
 This repository contains a zero-configuration Chrome extension for Data Center Director configlet audit and drift remediation.
 
+## Developer Guide
+
+[Developer and LLM Contributor Guide](docs/DEVELOPER_GUIDE.md)
+
 ## Video Overview
 
 [Watch the quick overview video (MP4)](docs/user-guide/videos/CleanShot%202026-08-12%20at%2020.50.37.mp4)
