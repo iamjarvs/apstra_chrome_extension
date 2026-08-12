@@ -1,0 +1,48 @@
+name: Release extension zip
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build extension zip
+        run: |
+          mkdir -p dist
+          SHORT_SHA="${GITHUB_SHA::7}"
+          ZIP_NAME="apstra-extension-${SHORT_SHA}.zip"
+
+          zip -r "dist/${ZIP_NAME}" \
+            manifest.json \
+            popup \
+            src \
+            README.md
+
+          echo "zip_name=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
+        id: package
+
+      - name: Create or update rolling release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: main-latest
+          name: Main Latest Build
+          body: |
+            Automatic build from main.
+
+            Commit: ${{ github.sha }}
+          prerelease: true
+          allowUpdates: true
+          replacesArtifacts: true
+          removeArtifacts: true
+          makeLatest: true
+          artifacts: dist/${{ steps.package.outputs.zip_name }}
