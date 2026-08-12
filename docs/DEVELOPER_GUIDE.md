@@ -32,10 +32,10 @@ Why this model exists:
 ## Repository Structure
 
 - manifest.json: MV3 metadata, permissions, popup entry, background worker entry.
-- src/background.js: service worker, token/header capture, tab probing, API orchestration, report generation, refresh-from-global action.
+- src/background.js: service worker, token/header capture, tab probing, API orchestration, report generation, refresh-from-global action, gateway correlation, VXLAN stretch action, VRF stretch action.
 - popup/popup.html: popup layout and semantic structure.
-- popup/popup.css: design tokens, layout system, table/modal styling, state badges.
-- popup/popup.js: UI state management, rendering, filtering/sorting, CSV export, details modal interactions, refresh action.
+- popup/popup.css: design tokens, layout system, table/modal styling, state badges, gateway/vxlan/vrf tool styling.
+- popup/popup.js: UI state management, rendering, filtering/sorting, CSV export, details modal interactions, refresh actions, gateway and VXLAN/VRF feature interactions.
 - docs/user-guide/: end-user guide screenshots and video.
 - README.md: install steps and end-user workflow explainer.
 
@@ -47,6 +47,10 @@ The popup talks to background through message types:
 - refreshActiveTabTraffic
 - runConfigletsReport
 - runGatewayConnectionsReport
+- runVxlanStretchReport
+- stretchVxlans
+- runVrfStretchReport
+- stretchVrfs
 - refreshConfigletFromGlobal
 
 Response envelope is always:
@@ -104,6 +108,55 @@ runGatewayConnectionsReport does this:
    - low: config match only
 7. Return matched rows + unmatched gateway rows with reasons.
 
+### 5) VXLAN stretch workflow
+
+runVxlanStretchReport does this:
+
+1. Load all blueprints.
+2. For each blueprint, load /api/blueprints/{id}/virtual-networks.
+3. For each blueprint, load /api/blueprints/{id}/security-zones.
+4. Normalize VXLAN and security-zone payloads (both map and array response forms).
+5. Build stretch grouping key (prefer VNI; fallback to label/zone/subnet composite).
+6. Group rows by blueprint presence so UI can show:
+   - present in all selected blueprints
+   - present in subset (stretch candidates)
+
+stretchVxlans does this:
+
+1. Validate selected stretch keys and selected blueprint scope.
+2. Re-fetch current VXLAN/security-zone facts to avoid stale UI assumptions.
+3. Derive source blueprint per selected row from presence in scope (preferred source optional).
+4. Derive targets from missing blueprints in scope.
+5. For each selected row and target blueprint:
+   - skip when VXLAN already exists in target
+   - resolve target security zone (id match first, then label match)
+   - assign to all detected target switch systems by default
+   - POST new VXLAN payload to /api/blueprints/{target_id}/virtual-networks
+6. Return per-target operation outcomes (created, skipped, failed) and summary counts.
+
+### 6) VRF stretch workflow
+
+runVrfStretchReport does this:
+
+1. Load all blueprints.
+2. For each blueprint, load /api/blueprints/{id}/security-zones.
+3. Normalize routing-zone/security-zone payloads (array/map response forms).
+4. Build stretch grouping key (prefer VNI/VNID when present; fallback to vrf_name/label/type).
+5. Group rows by blueprint presence so UI can show:
+   - present in all selected blueprints
+   - present in subset (stretch candidates)
+
+stretchVrfs does this:
+
+1. Validate selected stretch keys and selected blueprint scope.
+2. Re-fetch current VRF/security-zone facts to avoid stale UI assumptions.
+3. Derive source blueprint per selected row from presence in scope (preferred source optional).
+4. Derive targets from missing blueprints in scope.
+5. For each selected row and target blueprint:
+   - skip when VRF already exists in target
+   - POST new security-zone payload to /api/blueprints/{target_id}/security-zones
+6. Return per-target operation outcomes (created, skipped, failed) and summary counts.
+
 ## Data Model Notes
 
 Active table rows are grouped configlet rows with:
@@ -132,6 +185,42 @@ Gateway report rows include:
 - sharedBgpPairs[]
 - confidence
 
+VXLAN report rows include:
+
+- stretchKey
+- vnId / vnType
+- primaryLabel / labels[]
+- securityZoneLabels[]
+- ipv4Subnets[] / ipv6Subnets[]
+- presentBlueprints[]
+- missingBlueprintIds[]
+
+VXLAN stretch result rows include:
+
+- stretchKey
+- vxlanLabel / vxlanVni
+- sourceBlueprintId / sourceBlueprintName
+- targetBlueprintId / targetBlueprintName
+- status (created, skipped_exists, skipped_source_missing, failed)
+- message
+
+VRF report rows include:
+
+- stretchKey
+- primaryLabel / labels[]
+- vrfNames[] / vrfTypes[]
+- presentBlueprints[]
+- missingBlueprintIds[]
+
+VRF stretch result rows include:
+
+- stretchKey
+- vrfLabel
+- sourceBlueprintId / sourceBlueprintName
+- targetBlueprintId / targetBlueprintName
+- status (created, skipped_exists, skipped_source_missing, failed)
+- message
+
 The details modal renders blueprint-level cards from row.entries.
 
 ## UI Design Standards
@@ -140,7 +229,7 @@ Keep these standards for visual consistency:
 
 1. Preserve design tokens in popup/popup.css :root.
 2. Keep left navigation collapsed by default (app-shell is-collapsed-nav on load).
-3. Preserve three-view model (home + configlets + gateways) unless a new tool is explicitly approved.
+3. Preserve five-view model (home + configlets + gateways + vxlans + vrfs) unless a new tool is explicitly approved.
 4. Keep status badge semantics:
    - status-ready
    - status-pending
@@ -210,6 +299,12 @@ Keep these standards for visual consistency:
 6. If Gateway Links says Unsupported request:
    - popup is newer than active service worker
    - reload the extension in chrome://extensions
+7. If VXLAN stretch creation fails with permission errors:
+   - verify logged-in Apstra user has write permissions on target blueprints
+   - verify security zone exists in targets (matching id or label)
+8. If VRF stretch creation fails with permission errors:
+   - verify logged-in Apstra user has write permissions on target blueprints
+   - verify source routing-zone fields are accepted by your Apstra version
 
 ## Manual Test Matrix (minimum)
 
@@ -232,6 +327,20 @@ Keep these standards for visual consistency:
    - drag pans
    - mouse wheel and +/- zoom
    - reset re-centers and normalizes zoom
+11. Run VXLAN Stretch refresh and validate:
+   - scope checkboxes and source selector populate
+   - grouped tables split full-presence vs partial-presence rows
+12. Validate bulk stretch behavior:
+   - selecting stretchable rows enables action button
+   - per-target statuses appear in Last Stretch Operation
+   - reloading report reflects newly created VXLANs in target coverage
+13. Run VRF Stretch refresh and validate:
+   - scope checkboxes and source selector populate
+   - grouped tables split full-presence vs partial-presence rows
+14. Validate VRF bulk stretch behavior:
+   - selecting stretchable rows enables action button
+   - per-target statuses appear in Last Stretch Operation
+   - reloading report reflects newly created VRFs in target coverage
 
 ## LLM Contributor Guardrails
 
@@ -259,6 +368,10 @@ Keep these standards for visual consistency:
 - PUT /api/blueprints/{blueprint_id}/configlets/{configlet_id}
 - GET /api/blueprints/{blueprint_id}/remote_gateways
 - POST /api/blueprints/{blueprint_id}/ql
+- GET /api/blueprints/{blueprint_id}/virtual-networks
+- GET /api/blueprints/{blueprint_id}/security-zones
+- POST /api/blueprints/{blueprint_id}/virtual-networks
+- POST /api/blueprints/{blueprint_id}/security-zones
 
 ## Definition of Done for New Features
 
