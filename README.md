@@ -2,6 +2,8 @@
 
 This repository contains a zero-configuration Chrome extension for Data Center Director configlet audit, gateway correlation, and scoped VXLAN/VRF stretch operations.
 
+[**⬇ Download Latest Build**](https://github.com/iamjarvs/apstra_chrome_extension/releases/download/main-latest/apstra-extension-main-latest.zip)
+
 ## Developer Guide
 
 [Developer and LLM Contributor Guide](docs/DEVELOPER_GUIDE.md)
