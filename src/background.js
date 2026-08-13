@@ -1,6 +1,7 @@
 const API_ROOT = "/api";
 const TOKEN_STORE_KEY = "tokensByOrigin";
 const PROBE_TTL_MS = 30_000;
+const PERSISTED_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 const DEFAULT_PAGE_SIZE = 200;
 const MAX_PAGINATION_PAGES = 25;
 const VIRTUAL_NETWORKS_PATH_SUFFIX = "virtual-networks";
@@ -141,19 +142,20 @@ async function handleMessage(request) {
 }
 
 function getRequestTimeoutMs(type) {
-  if (type === "stretchVxlans") {
+  if (type === "stretchVxlans" || type === "stretchVrfs") {
     return 50_000;
   }
 
-  if (type === "runVxlanStretchReport") {
-    return 20_000;
+  // Report builders fan out per blueprint, so they need far more than the default.
+  if (type === "runConfigletsReport" || type === "runGatewayConnectionsReport") {
+    return 40_000;
   }
 
-  if (type === "stretchVrfs") {
-    return 50_000;
+  if (type === "runVxlanStretchReport" || type === "runVrfStretchReport") {
+    return 25_000;
   }
 
-  if (type === "runVrfStretchReport") {
+  if (type === "refreshConfigletFromGlobal") {
     return 20_000;
   }
 
@@ -169,9 +171,14 @@ async function hydrateTokenCache() {
       continue;
     }
 
+    const seenAt = Number(value.seenAt) || 0;
+    if (!seenAt || Date.now() - seenAt > PERSISTED_TOKEN_TTL_MS) {
+      continue;
+    }
+
     tokenCache.set(origin, {
       token: typeof value.token === "string" ? value.token : null,
-      seenAt: Number(value.seenAt) || Date.now(),
+      seenAt,
       authHeaders: sanitizeCapturedHeaders(value.authHeaders || {})
     });
   }
@@ -294,8 +301,20 @@ function schedulePersist() {
 
 async function persistTokenCache() {
   const tokensByOrigin = {};
+  const now = Date.now();
 
   for (const [origin, value] of tokenCache.entries()) {
+    // Any site with an /api/ path can hit the capture listener, so only credentials for an
+    // origin that actually probed as Data Center Director are written to disk, and only
+    // while they are recent.
+    if (!probeCache.get(origin)?.isLikelyDcd) {
+      continue;
+    }
+
+    if (!value.seenAt || now - value.seenAt > PERSISTED_TOKEN_TTL_MS) {
+      continue;
+    }
+
     tokensByOrigin[origin] = {
       token: value.token,
       seenAt: value.seenAt,
@@ -847,7 +866,7 @@ async function stretchVxlans(request) {
           stretchKey,
           vxlanLabel: sourceVxlan.label,
           vxlanVni: sourceVxlan.vnId,
-          sourceBlueprintId,
+          sourceBlueprintId: sourceBlueprint.blueprintId,
           sourceBlueprintName: sourceBlueprint.blueprintName,
           targetBlueprintId,
           targetBlueprintName: targetBlueprint.blueprintName,
@@ -1305,7 +1324,14 @@ async function fetchConfigletsByBlueprint(connection, token, authHeaders) {
         token,
         authHeaders
       );
-    } catch {
+    } catch (stagingError) {
+      // Only fall back when staging genuinely is not there; a 401/500 must not be
+      // masked by silently reporting committed configlets instead.
+      const status = stagingError?.responseStatus;
+      if (status !== 404 && status !== 422) {
+        throw stagingError;
+      }
+
       try {
         payloadItems = await fetchCollection(
           connection,
@@ -2136,18 +2162,16 @@ function findStretchConflict(target, { vni, vlanId, isRoutingZone, systemIds }) 
     return null;
   }
 
-  if (!isRoutingZone) {
-    for (const systemId of systemIds || []) {
-      const vnOwner = index.vlansBySystem?.[systemId]?.[String(vlan)];
-      if (vnOwner) {
-        return {
-          type: "vlan",
-          value: String(vlan),
-          ownerKind: "virtual_network",
-          ownerLabel: vnOwner,
-          message: `VLAN ${vlan} is already used by virtual network "${vnOwner}" on a target switch in ${target.blueprintName}.`
-        };
-      }
+  for (const systemId of systemIds || []) {
+    const vnOwner = index.vlansBySystem?.[systemId]?.[String(vlan)];
+    if (vnOwner) {
+      return {
+        type: "vlan",
+        value: String(vlan),
+        ownerKind: "virtual_network",
+        ownerLabel: vnOwner,
+        message: `VLAN ${vlan} is already used by virtual network "${vnOwner}" on a target switch in ${target.blueprintName}.`
+      };
     }
   }
 
@@ -2722,52 +2746,6 @@ async function apiGet(connection, path, token, authHeaders = {}) {
       "API_REQUEST_FAILED",
       { responseStatus: response.status, responseBody: data || text }
     );
-  }
-
-  return data || text;
-}
-
-async function apiDelete(connection, path, token, authHeaders = {}) {
-  const mergedHeaders = mergeHeaderMaps(authHeaders, {});
-  if (token && !hasHeaderCaseInsensitive(mergedHeaders, "authorization")) {
-    mergedHeaders.Authorization = `Bearer ${token}`;
-  }
-
-  const headers = {
-    Accept: "application/json",
-    ...mergedHeaders
-  };
-
-  if (connection?.tabId) {
-    const result = await apiCallFromTab(connection.tabId, connection.origin, path, "DELETE", headers);
-    if (!result.ok) {
-      throw createError(buildApiFailureMessage(result.status, path, result.data || result.text), "API_REQUEST_FAILED", {
-        responseStatus: result.status,
-        responseBody: result.data || result.text
-      });
-    }
-
-    return result.data || result.text;
-  }
-
-  if (!token) {
-    throw createError("No usable tab session or token for API request", "AUTH_UNAVAILABLE");
-  }
-
-  const response = await fetch(`${connection.origin}${path}`, {
-    method: "DELETE",
-    credentials: "include",
-    headers
-  });
-
-  const text = await response.text();
-  const data = tryParseJson(text);
-
-  if (!response.ok) {
-    throw createError(buildApiFailureMessage(response.status, path, data || text), "API_REQUEST_FAILED", {
-      responseStatus: response.status,
-      responseBody: data || text
-    });
   }
 
   return data || text;

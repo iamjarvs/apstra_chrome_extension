@@ -129,11 +129,18 @@ stretchVxlans does this:
 4. Derive targets from missing blueprints in scope.
 5. For each selected row and target blueprint:
    - skip when VXLAN already exists in target
+   - skip with skipped_conflict when the VNI, or the VLAN, is already claimed in the target
    - resolve target security zone (id match first, then label match)
-   - skip with skipped_zone_missing when the target has no matching routing zone (stretch the VRF first)
-   - assign to all detected target switch systems by default
+   - skip with skipped_zone_missing when the target has no matching routing zone
+   - bind to leaf systems and leaf pairs only (see Binding targets below)
    - POST new VXLAN payload to /api/blueprints/{target_id}/virtual-networks
-6. Return per-target operation outcomes (created, skipped, failed) and summary counts.
+6. Wait for Apstra to materialize the new objects before returning, otherwise an immediate
+   report refresh reads null vn_id values and the stretch looks like a no-op.
+7. Return per-target operation outcomes (created, skipped, failed) and summary counts.
+
+Requests may include autoVlanStretchKeys. For those keys the source VLAN is not pinned:
+bound_to entries omit vlan_id and reserved_vlan_id is dropped, so Apstra allocates a free
+VLAN per leaf while the VNI, subnet and gateway still stretch unchanged.
 
 ### 6) VRF stretch workflow
 
@@ -155,9 +162,19 @@ stretchVrfs does this:
 4. Derive targets from missing blueprints in scope.
 5. For each selected row and target blueprint:
    - skip when VRF already exists in target
-   - drop source-blueprint-scoped fields (routing_policy_id, vrf_id, vlan_id) that the target cannot resolve
+   - skip with skipped_conflict when the VNI, or the VLAN, is already claimed in the target
+   - drop source-blueprint-scoped fields (routing_policy_id, vrf_id) that the target cannot resolve
+   - keep the source vlan_id so the stretched zone matches, unless the key is in
+     autoVlanStretchKeys, in which case vlan_id is omitted and Apstra allocates one
    - POST new security-zone payload to /api/blueprints/{target_id}/security-zones
 6. Return per-target operation outcomes (created, skipped, failed) and summary counts.
+
+### Binding targets
+
+bound_to.system_id must be a leaf system or a leaf pair. fetchBlueprintBindingTargets queries
+system_nodes plus redundancy_group_nodes and returns redundancy groups whose members are leaves,
+plus leaves that belong to no group. Access switches and access redundancy groups are excluded:
+they belong in access_switch_node_ids, and sending them is rejected.
 
 ### VNI / VLAN conflict detection
 
@@ -165,14 +182,28 @@ Each blueprint row carries a conflictIndex built from data already fetched for t
 
 - vniOwners: VNI -> owning virtual network or routing zone. VNIs are a single shared namespace per
   blueprint, so a VXLAN can collide with a routing zone's VNI and vice versa.
-- routingZoneVlans: VLAN -> routing zone. Routing-zone VLANs must be unique blueprint-wide.
-- vlansBySystem: system id -> VLAN -> virtual network. VN VLANs must be unique per leaf.
+- blueprintWideVlans: VLAN -> owner, covering routing zones AND every virtual network VLAN. A
+  routing-zone VLAN must be unique against both. Checking only other routing zones is not enough:
+  a VLAN can be free among zones yet still bound by a virtual network, and Apstra rejects it.
+- vlansBySystem: system id -> VLAN -> virtual network. Virtual network VLANs are per leaf, so the
+  same VLAN on a different leaf is fine.
+- ipv4Subnets / ipv6Subnets: subnet -> virtual network, used for overlap warnings only.
 
 The popup mirrors this in findTargetConflict to grey out and disable conflicted rows before any POST,
 and the service worker re-checks with freshly fetched facts in findStretchConflict, recording
-skipped_vni_conflict style outcomes as status "skipped_conflict" instead of issuing a doomed request.
-Being outside the target's VNI pool is NOT treated as a conflict; Apstra accepts explicit out-of-pool
-VNIs and real deployments rely on that for DCI networks.
+status "skipped_conflict" instead of issuing a doomed request.
+
+Two deliberate non-rules:
+
+- Being outside the target's VNI pool is NOT a conflict. Apstra accepts explicit out-of-pool VNIs and
+  real deployments rely on that for DCI networks, so blocking would be a guaranteed false positive.
+- Overlapping SVI subnets are NOT a conflict. The API accepts them and Apstra raises a build error
+  afterwards, so they are surfaced as warnings that never block.
+
+Apstra validation failures arrive as errors.nodes["<node id>"] = [{ message, error_type }].
+extractApiErrorDetail pulls the message fields out; the relevant error_type values are
+VNI_ALREADY_USED_IN_VXLAN, VNI_ALREADY_USED_IN_RZ, VLAN_ID_NOT_UNIQUE_WITHIN_SYSTEM and
+VLAN_ID_USED_IN_ROUTING_ZONE.
 
 ### Blueprint design filtering
 
@@ -366,6 +397,26 @@ Keep these standards for visual consistency:
    - selecting stretchable rows enables action button
    - per-target statuses appear in Last Stretch Operation
    - reloading report reflects newly created VRFs in target coverage
+15. Validate conflict handling on both stretch tools:
+   - a candidate whose VNI is taken in the target is greyed, unselectable and excluded from
+     Select Stretchable
+   - a candidate whose VLAN is taken offers the "let Apstra pick a free VLAN" fix, and ticking it
+     flips the row to Ready without moving it in the table
+   - the Conflicts Detected table lists every blocked target and keeps resolved ones visible
+16. Validate the review page shown by Stretch Selected:
+   - routing zones needed first are listed with their own conflict state
+   - every selected VXLAN is listed with source and resolved targets
+   - subnet overlaps appear as warnings and do not block
+   - execution runs routing zones first, then VXLANs, with live progress for both
+
+### Automated logic suite
+
+The pure functions in src/background.js can be extracted and run against a live instance to check
+predictions against real API behaviour: classify blueprints, build conflict indexes from live data,
+predict conflict vs clear for every stretch candidate, then POST each payload and assert that
+predicted conflicts return 422 and predicted-clear ones return 201, deleting everything afterwards.
+Because staged creates are reversible, this is safe against a lab instance; always assert the
+blueprint object counts return to their starting values at the end.
 
 ## LLM Contributor Guardrails
 

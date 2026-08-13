@@ -465,7 +465,7 @@ function wireEvents() {
         getScopedBlueprintIds()
       );
       for (const item of appState.requiredVrfs) {
-        if (item.available && !item.blocking && item.autoVlan) {
+        if (isRequiredVrfSelectable(item) && item.autoVlan) {
           appState.selectedRequiredVrfKeys.add(item.stretchKey);
         }
       }
@@ -489,7 +489,7 @@ function wireEvents() {
 
   elements.vrfConfirmSelectAllButton.addEventListener("click", () => {
     appState.selectedRequiredVrfKeys = new Set(
-      (appState.requiredVrfs || []).filter((item) => item.available && !item.blocking).map((item) => item.stretchKey)
+      (appState.requiredVrfs || []).filter(isRequiredVrfSelectable).map((item) => item.stretchKey)
     );
     renderVrfConfirmList();
   });
@@ -1040,6 +1040,7 @@ async function loadVxlanReport() {
     appState.connection = response.connection;
     appState.vxlanReport = response.report;
     appState.vxlanSelectedStretchKeys.clear();
+    appState.vxlanAutoVlanKeys.clear();
 
     syncVxlanSourceAndTargetsAfterScopeChange(true);
     renderVxlanSummary();
@@ -1087,6 +1088,7 @@ async function loadVrfReport() {
     appState.connection = response.connection;
     appState.vrfReport = response.report;
     appState.vrfSelectedStretchKeys.clear();
+    appState.vrfAutoVlanKeys.clear();
 
     syncVrfSourceAndTargetsAfterScopeChange(true);
     renderVrfSummary();
@@ -2205,10 +2207,19 @@ function findTargetConflict(blueprint, { vni, vlanId, isRoutingZone }) {
   }
 
   if (isRoutingZone) {
-    const zoneOwner = index.routingZoneVlans?.[String(vlan)];
-    return zoneOwner
-      ? { type: "vlan", value: String(vlan), ownerKind: "routing_zone", ownerLabel: zoneOwner, summary: `VLAN ${vlan} used by routing zone "${zoneOwner}"` }
-      : null;
+    const owner = index.blueprintWideVlans?.[String(vlan)];
+    if (!owner) {
+      return null;
+    }
+
+    const kindLabel = owner.kind === "routing_zone" ? "routing zone" : "VN";
+    return {
+      type: "vlan",
+      value: String(vlan),
+      ownerKind: owner.kind,
+      ownerLabel: owner.label,
+      summary: `VLAN ${vlan} used by ${kindLabel} "${owner.label}"`
+    };
   }
 
   for (const systemId of blueprint?.assignableSystemIds || []) {
@@ -2349,6 +2360,12 @@ function selectionNeedsRoutingZones(stretchKeys) {
 // Full pre-flight review: which routing zones get created first, which VXLANs follow, and
 // any non-blocking warnings such as overlapping SVI subnets.
 async function promptForStretchReview(stretchKeys, scopeBlueprintIds) {
+  // Resolver first: the modal's buttons are live as soon as it is shown, and a click during
+  // the routing-zone fetch would otherwise resolve nothing and hang the workflow.
+  const decision = new Promise((resolve) => {
+    appState.vrfConfirmResolver = resolve;
+  });
+
   elements.vrfConfirmIntro.textContent = "Building stretch plan...";
   elements.vrfConfirmList.innerHTML = "";
   elements.vrfConfirmStatus.textContent = "";
@@ -2364,6 +2381,7 @@ async function promptForStretchReview(stretchKeys, scopeBlueprintIds) {
       renderVrfSummary();
       renderVrfTables();
     } catch (error) {
+      appState.vrfConfirmResolver = null;
       elements.vrfConfirmModal.classList.add("hidden");
       showError(`Could not load routing zone data: ${error.message || "unknown error"}`, "vxlan");
       return { cancelled: true, vrfStretchKeys: [] };
@@ -2373,7 +2391,7 @@ async function promptForStretchReview(stretchKeys, scopeBlueprintIds) {
   const required = needsZones ? buildRequiredVrfList(stretchKeys, scopeBlueprintIds) : [];
   appState.requiredVrfs = required;
   appState.selectedRequiredVrfKeys = new Set(
-    required.filter((item) => item.available && !item.blocking).map((item) => item.stretchKey)
+    required.filter(isRequiredVrfSelectable).map((item) => item.stretchKey)
   );
 
   elements.vrfConfirmZonesSection.classList.toggle("hidden", required.length === 0);
@@ -2385,9 +2403,7 @@ async function promptForStretchReview(stretchKeys, scopeBlueprintIds) {
   renderStretchReviewVxlans(stretchKeys);
   renderStretchReviewWarnings(stretchKeys);
 
-  return new Promise((resolve) => {
-    appState.vrfConfirmResolver = resolve;
-  });
+  return decision;
 }
 
 function renderStretchReviewVxlans(stretchKeys) {
@@ -2515,11 +2531,16 @@ function buildRequiredVrfList(stretchKeys, scopeBlueprintIds) {
   return required.sort((a, b) => a.zoneLabel.localeCompare(b.zoneLabel));
 }
 
+// An unresolved VLAN clash must not be selectable, otherwise it is sent only to be skipped.
+function isRequiredVrfSelectable(item) {
+  return Boolean(item.available) && !item.blocking && !(item.vlanResolvable && !item.autoVlan);
+}
+
 function renderVrfConfirmList() {
   const required = appState.requiredVrfs || [];
 
   elements.vrfConfirmList.innerHTML = required.map((item) => {
-    const selectable = item.available && !item.blocking;
+    const selectable = isRequiredVrfSelectable(item);
     const checked = appState.selectedRequiredVrfKeys.has(item.stretchKey) ? "checked" : "";
 
     let reason;
@@ -2558,7 +2579,7 @@ function renderVrfConfirmList() {
     `;
   }).join("");
 
-  const selectableCount = required.filter((item) => item.available && !item.blocking).length;
+  const selectableCount = required.filter(isRequiredVrfSelectable).length;
   elements.vrfConfirmStatus.textContent =
     `${numberFormat(appState.selectedRequiredVrfKeys.size)} of ${numberFormat(selectableCount)} selectable routing zone(s) chosen`;
 }
@@ -3799,7 +3820,7 @@ function renderGatewayDiagramSvg(model) {
 
     const path = buildCurvedEdgePath(edge);
 
-    const edgeTitle = `${edge.leftName || edge.leftId} <-> ${edge.rightName || edge.rightId} | ${edge.confidence || "low"} confidence | ${edge.linkCount} link(s)`;
+    const edgeTitle = `${nodeMap.get(edge.leftId)?.name || edge.leftId} <-> ${nodeMap.get(edge.rightId)?.name || edge.rightId} | ${edge.confidence || "low"} confidence | ${edge.linkCount} link(s)`;
 
     const linkCountLabel = edge.linkCount > 1
       ? `
