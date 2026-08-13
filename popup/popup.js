@@ -2,6 +2,7 @@ const elements = {
   appShell: document.getElementById("appShell"),
   toggleNavButton: document.getElementById("toggleNavButton"),
   homeView: document.getElementById("homeView"),
+  featureRequestView: document.getElementById("featureRequestView"),
   gatewaysView: document.getElementById("gatewaysView"),
   vxlansView: document.getElementById("vxlansView"),
   vrfsView: document.getElementById("vrfsView"),
@@ -15,6 +16,9 @@ const elements = {
   openGatewaysBtn: document.getElementById("openGatewaysBtn"),
   openVxlansBtn: document.getElementById("openVxlansBtn"),
   openVrfsBtn: document.getElementById("openVrfsBtn"),
+  openFeedbackButton: document.getElementById("openFeedbackButton"),
+  featureRequestForm: document.getElementById("featureRequestForm"),
+  featureRequestType: document.getElementById("featureRequestType"),
   backHomeButton: document.getElementById("backHomeButton"),
   backHomeFromGatewaysButton: document.getElementById("backHomeFromGatewaysButton"),
   backHomeFromVxlansButton: document.getElementById("backHomeFromVxlansButton"),
@@ -164,6 +168,7 @@ function wireEvents() {
   });
 
   elements.navHome.addEventListener("click", () => setView("home"));
+  elements.openFeedbackButton.addEventListener("click", () => setView("feature-request"));
   elements.navConfiglets.addEventListener("click", () => {
     if (!isAuthReady()) {
       showError("Capture token/auth headers first.", "home");
@@ -244,6 +249,11 @@ function wireEvents() {
     if (!appState.vrfReport) {
       void loadVrfReport();
     }
+  });
+
+  elements.featureRequestForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    openFeatureRequestIssue();
   });
 
   elements.backHomeButton.addEventListener("click", () => setView("home"));
@@ -621,12 +631,14 @@ function setView(view) {
   appState.view = view;
 
   const isHome = view === "home";
+  const isFeatureRequest = view === "feature-request";
   const isConfiglets = view === "configlets";
   const isGateways = view === "gateways";
   const isVxlans = view === "vxlans";
   const isVrfs = view === "vrfs";
 
   elements.homeView.classList.toggle("hidden", !isHome);
+  elements.featureRequestView.classList.toggle("hidden", !isFeatureRequest);
   elements.configletsView.classList.toggle("hidden", !isConfiglets);
   elements.gatewaysView.classList.toggle("hidden", !isGateways);
   elements.vxlansView.classList.toggle("hidden", !isVxlans);
@@ -649,6 +661,24 @@ function setView(view) {
   if (!isVrfs) {
     closeVrfPlanner();
   }
+
+  if (isFeatureRequest) {
+    elements.featureRequestType.focus();
+  }
+}
+
+function openFeatureRequestIssue() {
+  const type = elements.featureRequestType.value;
+  const templatesByType = {
+    Feature: "feature_request.yml",
+    Issue: "bug_report.yml",
+    Feedback: "feedback.yml",
+    Question: "question.yml"
+  };
+  const issueUrl = new URL("https://github.com/iamjarvs/apstra_chrome_extension/issues/new");
+  issueUrl.search = new URLSearchParams({ template: templatesByType[type] }).toString();
+
+  chrome.tabs.create({ url: issueUrl.toString() });
 }
 
 function isAuthReady() {

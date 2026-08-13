@@ -40,6 +40,7 @@
       </aside>
 
       <main class="main-panel">
+        <button id="openFeedbackButton" class="feedback-fab" type="button" aria-label="Send feature request, issue, or feedback" title="Send feature request, issue, or feedback">💬</button>
         <section id="homeView" class="view">
           <header class="panel-header compact">
             <div>
@@ -83,6 +84,31 @@
           </section>
 
           <p id="homeHint" class="hint-text">Waiting for token/auth capture before tools can be opened.</p>
+        </section>
+
+        <section id="featureRequestView" class="view hidden">
+          <header class="panel-header compact">
+            <div>
+              <h2>Send Feedback</h2>
+              <p class="subtitle">Choose a type, then continue to GitHub to complete and submit the form.</p>
+            </div>
+          </header>
+
+          <form id="featureRequestForm" class="feature-request-form">
+            <label for="featureRequestType">
+              Issue type
+              <select id="featureRequestType" name="type">
+                <option value="Feature">Feature</option>
+                <option value="Issue">Issue</option>
+                <option value="Feedback">Feedback</option>
+                <option value="Question">Question</option>
+              </select>
+            </label>
+            <p class="feature-request-note">GitHub sign-in is required to submit. You will complete the selected template on GitHub.</p>
+            <div class="feature-request-actions">
+              <button class="btn btn-primary" type="submit">Continue to GitHub</button>
+            </div>
+          </form>
         </section>
 
         <section id="gatewaysView" class="view hidden">

@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest an improvement or a new workflow for Data Center Director Tools.
+title: "[Feature]: "
+labels:
+  - new feature
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for suggesting an improvement.
+  - type: input
+    id: summary
+    attributes:
+      label: What would you like to add or improve?
+      placeholder: Compare blueprint routing policies
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      placeholder: Describe the current task, friction, or operational risk.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired workflow or outcome
+      placeholder: Describe what the extension should do.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include relevant examples, blueprint scale, or screenshots.

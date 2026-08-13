@@ -33,6 +33,7 @@ This repository contains a zero-configuration Chrome extension for Data Center D
 - Runs Gateway Links to correlate inter-blueprint gateway relationships and BGP evidence.
 - Runs scope-first VXLAN Stretch to bulk copy missing VXLANs across selected blueprints.
 - Runs scope-first VRF Stretch to bulk copy missing routing zones/security zones across selected blueprints.
+- Includes an always-available feedback icon where users choose a feature request, issue, or feedback template before continuing to GitHub to complete it. GitHub sign-in is required to submit.
 
 ## Install
 

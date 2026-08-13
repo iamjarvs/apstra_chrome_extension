@@ -1,0 +1,27 @@
+name: Issue report
+description: Report a problem with Data Center Director Tools.
+title: "[Issue]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Thank you for helping improve the extension.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      placeholder: Describe the unexpected behavior and what you were doing.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include steps to reproduce, screenshots, or relevant environment details.
