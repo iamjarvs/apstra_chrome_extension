@@ -821,25 +821,56 @@
     </div>
 
     <div id="vrfConfirmModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="vrfConfirmTitle">
-      <div class="modal-card">
+      <div class="modal-card vxlan-planner-modal">
         <header class="modal-header">
-          <h3 id="vrfConfirmTitle">Routing zones required</h3>
+          <h3 id="vrfConfirmTitle">Review stretch plan</h3>
           <button id="vrfConfirmCancelButton" class="btn btn-secondary" type="button">Cancel</button>
         </header>
         <div class="modal-body">
           <p class="cell-subtle" id="vrfConfirmIntro"></p>
 
-          <section class="vxlan-action-row">
-            <button id="vrfConfirmSelectAllButton" class="btn btn-secondary" type="button">Select All</button>
-            <button id="vrfConfirmSelectNoneButton" class="btn btn-secondary" type="button">Select None</button>
-            <span id="vrfConfirmStatus" class="cell-subtle"></span>
+          <section id="vrfConfirmZonesSection">
+            <h3 class="section-heading">Step 1: Routing zones to stretch first</h3>
+            <section class="vxlan-action-row">
+              <button id="vrfConfirmSelectAllButton" class="btn btn-secondary" type="button">Select All</button>
+              <button id="vrfConfirmSelectNoneButton" class="btn btn-secondary" type="button">Select None</button>
+              <span id="vrfConfirmStatus" class="cell-subtle"></span>
+            </section>
+            <div id="vrfConfirmList" class="vrf-confirm-list"></div>
           </section>
 
-          <div id="vrfConfirmList" class="vrf-confirm-list"></div>
+          <section>
+            <h3 class="section-heading">Step 2: VXLANs to stretch (<span id="vrfConfirmVxlanCount">0</span>)</h3>
+            <div class="table-wrap table-wrap-unused" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-configlet" />
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>VXLAN</th>
+                    <th>Source</th>
+                    <th>Will be created in</th>
+                  </tr>
+                </thead>
+                <tbody id="vrfConfirmVxlanBody">
+                  <tr class="placeholder-row"><td colspan="3">Nothing selected.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="vrfConfirmWarningsSection" class="hidden">
+            <h3 class="section-heading">Warnings (<span id="vrfConfirmWarningCount">0</span>)</h3>
+            <p class="cell-subtle">These do not block the stretch, but Apstra will raise a build error until they are resolved.</p>
+            <ul id="vrfConfirmWarnings" class="progress-issues"></ul>
+          </section>
 
           <section class="vxlan-action-row">
-            <button id="vrfConfirmProceedButton" class="btn btn-primary" type="button">Stretch VRFs + VXLANs</button>
-            <button id="vrfConfirmSkipButton" class="btn btn-secondary" type="button">Skip VRFs, stretch VXLANs only</button>
+            <button id="vrfConfirmProceedButton" class="btn btn-primary" type="button">Confirm and stretch</button>
+            <button id="vrfConfirmSkipButton" class="btn btn-secondary" type="button">Stretch VXLANs only</button>
           </section>
         </div>
       </div>

@@ -2035,6 +2035,8 @@ function buildBlueprintConflictIndex(vxlans, securityZones) {
   const vniOwners = {};
   const routingZoneVlans = {};
   const vlansBySystem = {};
+  const ipv4Subnets = [];
+  const ipv6Subnets = [];
   // Routing-zone VLANs must be unique against every other routing zone AND every
   // virtual network VLAN in the blueprint, regardless of which leaf uses it.
   const blueprintWideVlans = {};
@@ -2063,6 +2065,15 @@ function buildBlueprintConflictIndex(vxlans, securityZones) {
       blueprintWideVlans[String(reservedVlanId)] = { kind: "virtual_network", label: vxlan.label };
     }
 
+    // Overlapping SVI subnets are a build error, not a create failure, so these are warnings only.
+    if (vxlan.ipv4Subnet) {
+      ipv4Subnets.push({ subnet: vxlan.ipv4Subnet, label: vxlan.label });
+    }
+
+    if (vxlan.ipv6Subnet) {
+      ipv6Subnets.push({ subnet: vxlan.ipv6Subnet, label: vxlan.label });
+    }
+
     for (const binding of vxlan.boundTo || []) {
       const vlanId = asVlanId(binding.vlanId);
       if (vlanId === null) {
@@ -2083,7 +2094,7 @@ function buildBlueprintConflictIndex(vxlans, securityZones) {
     }
   }
 
-  return { vniOwners, routingZoneVlans, blueprintWideVlans, vlansBySystem };
+  return { vniOwners, routingZoneVlans, blueprintWideVlans, vlansBySystem, ipv4Subnets, ipv6Subnets };
 }
 
 // Returns the reason a source object cannot be created in this blueprint, or null when clear.
