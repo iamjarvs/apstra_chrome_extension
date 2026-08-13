@@ -397,6 +397,354 @@ body {
   font-size: 13px;
 }
 
+.error-banner.is-notice {
+  background: #eef4fb;
+  border-color: #cfe0f2;
+  color: #34506b;
+}
+
+.prereq-callout {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  background: #fff6e6;
+  border: 1px solid #f0d6a4;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.prereq-callout .prereq-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.prereq-callout strong {
+  font-size: 13px;
+  color: #7a4e08;
+}
+
+.prereq-callout p {
+  margin: 0;
+  font-size: 12px;
+  color: #6b563a;
+}
+
+.prereq-zones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.prereq-zones span {
+  background: #ffffff;
+  border: 1px solid #e6cfa4;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #7a4e08;
+}
+
+.prereq-callout .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.inline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #526a82;
+}
+
+.target-pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  margin: 0 4px 4px 0;
+}
+
+.target-pill.is-ready {
+  background: #dff7e8;
+  color: #0f5f36;
+}
+
+.target-pill.is-blocked {
+  background: #fdeed3;
+  color: #8a5a10;
+}
+
+.target-pill.is-conflict {
+  background: #ffe1e1;
+  color: #9a2d2d;
+}
+
+.plan-pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.plan-pill.is-ready {
+  background: #dff7e8;
+  color: #0f5f36;
+}
+
+.plan-pill.is-blocked {
+  background: #fdeed3;
+  color: #8a5a10;
+}
+
+.plan-pill.is-none {
+  background: #edf3fa;
+  color: #4a637c;
+}
+
+.plan-pill.is-conflict {
+  background: #ffe1e1;
+  color: #9a2d2d;
+}
+
+.vrf-confirm-list {
+  display: grid;
+  gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.vrf-confirm-item {
+  border: 1px solid #d4e2f0;
+  border-radius: 10px;
+  padding: 7px 9px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #fbfdff;
+}
+
+.vrf-confirm-item.is-conflict {
+  border-color: #f0c4c4;
+  background: #fff7f7;
+}
+
+.vrf-confirm-item .meta {
+  display: grid;
+  gap: 2px;
+}
+
+.vrf-confirm-item .meta strong {
+  font-size: 12px;
+  color: #1f3d59;
+}
+
+.vrf-confirm-item .meta span {
+  font-size: 11px;
+  color: #607487;
+}
+
+.row-resolved {
+  background: #f4fbf6;
+}
+
+.auto-vlan-fix {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 5px;
+  padding: 4px 7px;
+  border: 1px dashed #b8cfe4;
+  border-radius: 8px;
+  background: #f4f9ff;
+  font-size: 11px;
+  color: #2f5c85;
+  cursor: pointer;
+}
+
+.auto-vlan-fix input {
+  margin-top: 1px;
+}
+
+.btn-small {
+  padding: 4px 9px;
+  font-size: 11px;
+}
+
+.detail-block {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.detail-block h4 {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #526a82;
+}
+
+.detail-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.detail-facts div {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 6px 8px;
+  display: grid;
+  gap: 2px;
+  background: #ffffff;
+}
+
+.detail-facts span {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #7c8b99;
+}
+
+.detail-facts strong {
+  font-size: 13px;
+  color: #1f3d59;
+}
+
+.detail-blueprints {
+  display: grid;
+  gap: 7px;
+}
+
+.detail-blueprint {
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 9px;
+  padding: 7px 9px;
+  background: #ffffff;
+}
+
+.detail-blueprint p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: #4a637c;
+  line-height: 1.4;
+}
+
+.detail-blueprint-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.detail-blueprint-head strong {
+  font-size: 13px;
+  color: #1f3d59;
+}
+
+.detail-blueprint-head span {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.detail-blueprint.is-ready {
+  border-left-color: #2f9e63;
+}
+
+.detail-blueprint.is-ready .detail-blueprint-head span {
+  color: #0f5f36;
+}
+
+.detail-blueprint.is-needs-vrf {
+  border-left-color: #e0ac53;
+}
+
+.detail-blueprint.is-needs-vrf .detail-blueprint-head span {
+  color: #8a5a10;
+}
+
+.detail-blueprint.is-conflict {
+  border-left-color: var(--danger);
+}
+
+.detail-blueprint.is-conflict .detail-blueprint-head span {
+  color: #9a2d2d;
+}
+
+.detail-blueprint.is-present {
+  border-left-color: #8fa6bb;
+}
+
+.detail-blueprint.is-present .detail-blueprint-head span {
+  color: #4a637c;
+}
+
+.row-disabled {
+  background: #f6f8fa;
+  opacity: 0.6;
+}
+
+.row-disabled td {
+  color: #7c8b99;
+}
+
+.row-disabled .cell-title,
+.row-disabled .cell-subtle {
+  color: #7c8b99;
+}
+
+.row-disabled input[type="checkbox"] {
+  cursor: not-allowed;
+}
+
+.progress-panel {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfdff;
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.progress-panel strong {
+  font-size: 12px;
+  color: #26445f;
+}
+
+.progress-issues {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.progress-issues li {
+  font-size: 11px;
+  line-height: 1.35;
+  border-left: 3px solid #d7e2ed;
+  padding: 2px 0 2px 7px;
+  color: #4a637c;
+}
+
+.progress-issues li.is-failed {
+  border-left-color: var(--danger);
+  color: #9a2d2d;
+}
+
+.progress-issues li.is-skipped {
+  border-left-color: #e0ac53;
+  color: #7a5a1c;
+}
+
 .toolbar {
   display: grid;
   grid-template-columns: 1.2fr 1fr 0.8fr;
@@ -423,6 +771,10 @@ body {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
+}
+
+#vxlanSummaryGrid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .summary-grid article {
@@ -1060,6 +1412,13 @@ tbody tr.details-row:hover {
   place-items: center;
   padding: 14px;
   z-index: 50;
+}
+
+/* These open on top of the planner modal, which is itself an overlay. */
+#vxlanRowDetailsModal,
+#vrfRowDetailsModal,
+#vrfConfirmModal {
+  z-index: 60;
 }
 
 .modal-card {

@@ -5,6 +5,8 @@ const DEFAULT_PAGE_SIZE = 200;
 const MAX_PAGINATION_PAGES = 25;
 const VIRTUAL_NETWORKS_PATH_SUFFIX = "virtual-networks";
 const SECURITY_ZONES_PATH_SUFFIX = "security-zones";
+// Freeform blueprints do not expose the datacenter reference-design APIs this extension uses.
+const UNSUPPORTED_BLUEPRINT_DESIGNS = new Set(["freeform"]);
 
 const tokenCache = new Map();
 const probeCache = new Map();
@@ -598,6 +600,12 @@ async function stretchVxlans(request) {
       ? request.stretchKeys.map((item) => asString(item).trim()).filter(Boolean)
       : []
   );
+  // Keys the user asked to stretch without pinning the source VLAN, so Apstra allocates a free one.
+  const autoVlanStretchKeys = new Set(
+    Array.isArray(request?.autoVlanStretchKeys)
+      ? request.autoVlanStretchKeys.map((item) => asString(item).trim()).filter(Boolean)
+      : []
+  );
 
   if (stretchKeys.length === 0) {
     throw createError("Select at least one VXLAN to stretch", "BAD_REQUEST");
@@ -676,6 +684,14 @@ async function stretchVxlans(request) {
   }
 
   const results = [];
+  const plannedOperationCount = plans.reduce(
+    (sum, plan) => sum + Math.max(plan.targetBlueprintIds.length, 1),
+    0
+  );
+  const pushResult = (entry) => {
+    results.push(entry);
+    emitStretchProgress("vxlan", entry, results.length, plannedOperationCount);
+  };
 
   for (const plan of plans) {
     const stretchKey = plan.stretchKey;
@@ -688,7 +704,7 @@ async function stretchVxlans(request) {
     if (!sourceVxlan) {
       for (const targetBlueprintId of plan.targetBlueprintIds) {
         const targetBlueprint = blueprintMap.get(targetBlueprintId);
-        results.push({
+        pushResult({
           stretchKey,
           vxlanLabel: "Unknown VXLAN",
           vxlanVni: "",
@@ -707,7 +723,7 @@ async function stretchVxlans(request) {
     }
 
     if (plan.targetBlueprintIds.length === 0 && plan.mode === "scope") {
-      results.push({
+      pushResult({
         stretchKey,
         vxlanLabel: sourceVxlan.label,
         vxlanVni: sourceVxlan.vnId,
@@ -729,7 +745,7 @@ async function stretchVxlans(request) {
       }
 
       if (targetBlueprint.vxlanByStretchKey.has(stretchKey)) {
-        results.push({
+        pushResult({
           stretchKey,
           vxlanLabel: sourceVxlan.label,
           vxlanVni: sourceVxlan.vnId,
@@ -743,9 +759,16 @@ async function stretchVxlans(request) {
         continue;
       }
 
-      const targetSecurityZoneId = resolveTargetSecurityZoneId(sourceVxlan, sourceBlueprint, targetBlueprint);
-      if (!targetSecurityZoneId) {
-        results.push({
+      const autoVlan = autoVlanStretchKeys.has(stretchKey);
+      const conflict = findStretchConflict(targetBlueprint, {
+        vni: sourceVxlan.vnId,
+        vlanId: autoVlan ? null : resolveSourceVlanId(sourceVxlan),
+        isRoutingZone: false,
+        systemIds: targetBlueprint.assignableSystemIds
+      });
+
+      if (conflict) {
+        pushResult({
           stretchKey,
           vxlanLabel: sourceVxlan.label,
           vxlanVni: sourceVxlan.vnId,
@@ -753,15 +776,31 @@ async function stretchVxlans(request) {
           sourceBlueprintName: sourceBlueprint.blueprintName,
           targetBlueprintId,
           targetBlueprintName: targetBlueprint.blueprintName,
-          status: "failed",
-          message: "Target blueprint does not contain a matching security zone"
+          status: "skipped_conflict",
+          message: conflict.message
         });
         continue;
       }
 
-      const targetBoundTo = buildTargetBoundToBindings(sourceVxlan, targetBlueprint.assignableSystemIds);
+      const targetSecurityZoneId = resolveTargetSecurityZoneId(sourceVxlan, sourceBlueprint, targetBlueprint);
+      if (!targetSecurityZoneId) {
+        pushResult({
+          stretchKey,
+          vxlanLabel: sourceVxlan.label,
+          vxlanVni: sourceVxlan.vnId,
+          sourceBlueprintId: sourceBlueprint.blueprintId,
+          sourceBlueprintName: sourceBlueprint.blueprintName,
+          targetBlueprintId,
+          targetBlueprintName: targetBlueprint.blueprintName,
+          status: "skipped_zone_missing",
+          message: `Target blueprint has no "${sourceVxlan.securityZoneLabel || "matching"}" routing zone. Stretch the VRF first, then retry.`
+        });
+        continue;
+      }
+
+      const targetBoundTo = buildTargetBoundToBindings(sourceVxlan, targetBlueprint.assignableSystemIds, autoVlan);
       if (targetBoundTo.length === 0) {
-        results.push({
+        pushResult({
           stretchKey,
           vxlanLabel: sourceVxlan.label,
           vxlanVni: sourceVxlan.vnId,
@@ -775,7 +814,7 @@ async function stretchVxlans(request) {
         continue;
       }
 
-      const payload = buildVirtualNetworkCreatePayload(sourceVxlan, targetSecurityZoneId, targetBoundTo);
+      const payload = buildVirtualNetworkCreatePayload(sourceVxlan, targetSecurityZoneId, targetBoundTo, autoVlan);
 
       try {
         await apiPost(
@@ -792,7 +831,7 @@ async function stretchVxlans(request) {
           securityZoneId: targetSecurityZoneId
         });
 
-        results.push({
+        pushResult({
           stretchKey,
           vxlanLabel: sourceVxlan.label,
           vxlanVni: sourceVxlan.vnId,
@@ -804,7 +843,7 @@ async function stretchVxlans(request) {
           message: "VXLAN copied to target blueprint"
         });
       } catch (error) {
-        results.push({
+        pushResult({
           stretchKey,
           vxlanLabel: sourceVxlan.label,
           vxlanVni: sourceVxlan.vnId,
@@ -822,6 +861,10 @@ async function stretchVxlans(request) {
   const createdCount = results.filter((item) => item.status === "created").length;
   const skippedCount = results.filter((item) => item.status.startsWith("skipped")).length;
   const failedCount = results.filter((item) => item.status === "failed").length;
+
+  if (createdCount > 0) {
+    await waitForApstraToMaterialize();
+  }
 
   return {
     generatedAt: Date.now(),
@@ -953,6 +996,14 @@ async function stretchVrfs(request) {
   }
 
   const results = [];
+  const plannedOperationCount = plans.reduce(
+    (sum, plan) => sum + Math.max(plan.targetBlueprintIds.length, 1),
+    0
+  );
+  const pushResult = (entry) => {
+    results.push(entry);
+    emitStretchProgress("vrf", entry, results.length, plannedOperationCount);
+  };
 
   for (const plan of plans) {
     const stretchKey = plan.stretchKey;
@@ -965,7 +1016,7 @@ async function stretchVrfs(request) {
     if (!sourceVrf) {
       for (const targetBlueprintId of plan.targetBlueprintIds) {
         const targetBlueprint = blueprintMap.get(targetBlueprintId);
-        results.push({
+        pushResult({
           stretchKey,
           vrfLabel: "Unknown VRF",
           sourceBlueprintId: plan.sourceBlueprintId || "",
@@ -983,7 +1034,7 @@ async function stretchVrfs(request) {
     }
 
     if (plan.targetBlueprintIds.length === 0 && plan.mode === "scope") {
-      results.push({
+      pushResult({
         stretchKey,
         vrfLabel: sourceVrf.label,
         sourceBlueprintId: sourceBlueprint.blueprintId,
@@ -1004,7 +1055,7 @@ async function stretchVrfs(request) {
       }
 
       if (targetBlueprint.vrfByStretchKey.has(stretchKey)) {
-        results.push({
+        pushResult({
           stretchKey,
           vrfLabel: sourceVrf.label,
           sourceBlueprintId: sourceBlueprint.blueprintId,
@@ -1013,6 +1064,27 @@ async function stretchVrfs(request) {
           targetBlueprintName: targetBlueprint.blueprintName,
           status: "skipped_exists",
           message: "VRF already exists in target blueprint"
+        });
+        continue;
+      }
+
+      // vlan_id is stripped from the payload, so only the VNI can collide.
+      const conflict = findStretchConflict(targetBlueprint, {
+        vni: sourceVrf.vniId,
+        vlanId: null,
+        isRoutingZone: true
+      });
+
+      if (conflict) {
+        pushResult({
+          stretchKey,
+          vrfLabel: sourceVrf.label,
+          sourceBlueprintId: sourceBlueprint.blueprintId,
+          sourceBlueprintName: sourceBlueprint.blueprintName,
+          targetBlueprintId,
+          targetBlueprintName: targetBlueprint.blueprintName,
+          status: "skipped_conflict",
+          message: conflict.message
         });
         continue;
       }
@@ -1033,7 +1105,7 @@ async function stretchVrfs(request) {
           id: ""
         });
 
-        results.push({
+        pushResult({
           stretchKey,
           vrfLabel: sourceVrf.label,
           sourceBlueprintId: sourceBlueprint.blueprintId,
@@ -1044,7 +1116,7 @@ async function stretchVrfs(request) {
           message: "VRF copied to target blueprint"
         });
       } catch (error) {
-        results.push({
+        pushResult({
           stretchKey,
           vrfLabel: sourceVrf.label,
           sourceBlueprintId: sourceBlueprint.blueprintId,
@@ -1061,6 +1133,10 @@ async function stretchVrfs(request) {
   const createdCount = results.filter((item) => item.status === "created").length;
   const skippedCount = results.filter((item) => item.status.startsWith("skipped")).length;
   const failedCount = results.filter((item) => item.status === "failed").length;
+
+  if (createdCount > 0) {
+    await waitForApstraToMaterialize();
+  }
 
   return {
     generatedAt: Date.now(),
@@ -1168,9 +1244,11 @@ async function refreshConfigletFromGlobal(request) {
 }
 
 async function fetchConfigletsByBlueprint(connection, token, authHeaders) {
-  const blueprints = (await fetchCollection(connection, `${API_ROOT}/blueprints`, token, authHeaders))
+  const allBlueprints = (await fetchCollection(connection, `${API_ROOT}/blueprints`, token, authHeaders))
     .map(normalizeBlueprint)
     .filter((item) => item.id);
+
+  const { supported: blueprints, skipped: skippedBlueprints } = partitionBlueprintsByDesign(allBlueprints);
 
   let globalConfiglets = [];
   const failures = [];
@@ -1207,6 +1285,7 @@ async function fetchConfigletsByBlueprint(connection, token, authHeaders) {
   }
 
   const assignments = [];
+  const skippedFromApi = [];
 
   const settledResults = await mapWithConcurrency(blueprints, 6, async (blueprint) => {
     const encodedId = encodeURIComponent(blueprint.id);
@@ -1220,12 +1299,22 @@ async function fetchConfigletsByBlueprint(connection, token, authHeaders) {
         authHeaders
       );
     } catch {
-      payloadItems = await fetchCollection(
-        connection,
-        `${API_ROOT}/blueprints/${encodedId}/configlets`,
-        token,
-        authHeaders
-      );
+      try {
+        payloadItems = await fetchCollection(
+          connection,
+          `${API_ROOT}/blueprints/${encodedId}/configlets`,
+          token,
+          authHeaders
+        );
+      } catch (error) {
+        if (isUnsupportedBlueprintApiError(error)) {
+          throw createError("Blueprint does not expose configlets", "BLUEPRINT_UNSUPPORTED", {
+            blueprintDesign: blueprint.design
+          });
+        }
+
+        throw error;
+      }
     }
 
     const items = payloadItems
@@ -1267,6 +1356,12 @@ async function fetchConfigletsByBlueprint(connection, token, authHeaders) {
       }
     } else {
       const context = result.reason?.context;
+
+      if (result.reason?.code === "BLUEPRINT_UNSUPPORTED") {
+        skippedFromApi.push(buildSkippedBlueprintEntry(context, result.reason?.blueprintDesign));
+        continue;
+      }
+
       failures.push({
         blueprintId: context?.blueprintId || "unknown",
         blueprintName: context?.blueprintName || "Unknown blueprint",
@@ -1275,38 +1370,59 @@ async function fetchConfigletsByBlueprint(connection, token, authHeaders) {
     }
   }
 
+  const allSkippedBlueprints = [...skippedBlueprints, ...skippedFromApi];
+  const analyzedBlueprintIds = new Set(
+    blueprints
+      .map((item) => item.id)
+      .filter((id) => !allSkippedBlueprints.some((entry) => entry.blueprintId === id))
+  );
+
   const groupedRows = groupAssignmentsByConfiglet(assignments);
   const unusedRows = buildUnusedConfigletRows(globalConfiglets, groupedRows);
 
   return {
     generatedAt: Date.now(),
-    blueprintCount: blueprints.length,
+    blueprintCount: analyzedBlueprintIds.size,
     assignmentCount: assignments.length,
     uniqueConfigletCount: groupedRows.length,
     unusedConfigletCount: unusedRows.length,
     outOfSyncConfigletCount: groupedRows.filter((row) => row.outOfSyncCount > 0).length,
     partialFailures: failures,
+    skippedBlueprints: allSkippedBlueprints,
     rows: groupedRows,
     unusedRows
   };
 }
 
 async function fetchGatewayConnectionsReport(connection, token, authHeaders) {
-  const blueprints = (await fetchCollection(connection, `${API_ROOT}/blueprints`, token, authHeaders))
+  const allBlueprints = (await fetchCollection(connection, `${API_ROOT}/blueprints`, token, authHeaders))
     .map(normalizeBlueprint)
     .filter((item) => item.id);
+
+  const { supported: blueprints, skipped: skippedBlueprints } = partitionBlueprintsByDesign(allBlueprints);
 
   const failures = [];
 
   const settledResults = await mapWithConcurrency(blueprints, 4, async (blueprint) => {
     const encodedId = encodeURIComponent(blueprint.id);
 
-    const remoteGatewayPayload = await apiGet(
-      connection,
-      `${API_ROOT}/blueprints/${encodedId}/remote_gateways`,
-      token,
-      authHeaders
-    );
+    let remoteGatewayPayload;
+    try {
+      remoteGatewayPayload = await apiGet(
+        connection,
+        `${API_ROOT}/blueprints/${encodedId}/remote_gateways`,
+        token,
+        authHeaders
+      );
+    } catch (error) {
+      if (isUnsupportedBlueprintApiError(error)) {
+        throw createError("Blueprint does not expose remote gateways", "BLUEPRINT_UNSUPPORTED", {
+          blueprintDesign: blueprint.design
+        });
+      }
+
+      throw error;
+    }
 
     const remoteGateways = normalizeRemoteGatewayCollection(remoteGatewayPayload);
     const bgpFacts = await fetchBlueprintBgpSessionFacts(connection, blueprint.id, token, authHeaders);
@@ -1327,6 +1443,12 @@ async function fetchGatewayConnectionsReport(connection, token, authHeaders) {
     }
 
     const context = result.reason?.context;
+
+    if (result.reason?.code === "BLUEPRINT_UNSUPPORTED") {
+      skippedBlueprints.push(buildSkippedBlueprintEntry(context, result.reason?.blueprintDesign));
+      continue;
+    }
+
     failures.push({
       blueprintId: context?.blueprintId || "unknown",
       blueprintName: context?.blueprintName || "Unknown blueprint",
@@ -1487,7 +1609,7 @@ async function fetchGatewayConnectionsReport(connection, token, authHeaders) {
 
   return {
     generatedAt: Date.now(),
-    blueprintCount: blueprints.length,
+    blueprintCount: blueprintFacts.length,
     blueprintsWithGateways,
     blueprintsWithBgp,
     totalRemoteGateways,
@@ -1497,6 +1619,7 @@ async function fetchGatewayConnectionsReport(connection, token, authHeaders) {
     bgpBackedConnectionCount: connectionRows.filter((row) => row.hasBgpEvidence).length,
     unmatchedGatewayCount: unmatchedRows.length,
     partialFailures: failures,
+    skippedBlueprints,
     rows: connectionRows,
     unmatchedRows,
     blueprintRows
@@ -1530,6 +1653,7 @@ async function fetchVxlanStretchReport(connection, token, authHeaders) {
     fullPresenceCount: fullyPresentCount,
     partialPresenceCount: partialCount,
     partialFailures: facts.partialFailures,
+    skippedBlueprints: facts.skippedBlueprints,
     blueprints: facts.blueprintRows,
     rows
   };
@@ -1562,35 +1686,64 @@ async function fetchVrfStretchReport(connection, token, authHeaders) {
     fullPresenceCount: fullyPresentCount,
     partialPresenceCount: partialCount,
     partialFailures: facts.partialFailures,
+    skippedBlueprints: facts.skippedBlueprints,
     blueprints: facts.blueprintRows,
     rows
   };
 }
 
 async function fetchBlueprintVrfFacts(connection, token, authHeaders) {
-  const blueprints = (await fetchCollection(connection, `${API_ROOT}/blueprints`, token, authHeaders))
+  const allBlueprints = (await fetchCollection(connection, `${API_ROOT}/blueprints`, token, authHeaders))
     .map(normalizeBlueprint)
     .filter((item) => item.id);
+
+  const { supported: blueprints, skipped: skippedBlueprints } = partitionBlueprintsByDesign(allBlueprints);
 
   const partialFailures = [];
 
   const settledResults = await mapWithConcurrency(blueprints, 4, async (blueprint) => {
     const encodedId = encodeURIComponent(blueprint.id);
 
-    const securityZonePayload = await apiGet(
-      connection,
-      `${API_ROOT}/blueprints/${encodedId}/${SECURITY_ZONES_PATH_SUFFIX}`,
-      token,
-      authHeaders
-    );
+    let securityZonePayload;
+    let virtualNetworkPayload;
+    try {
+      // Virtual networks are needed too: their VNIs share the namespace with routing zones.
+      [securityZonePayload, virtualNetworkPayload] = await Promise.all([
+        apiGet(
+          connection,
+          `${API_ROOT}/blueprints/${encodedId}/${SECURITY_ZONES_PATH_SUFFIX}`,
+          token,
+          authHeaders
+        ),
+        apiGet(
+          connection,
+          `${API_ROOT}/blueprints/${encodedId}/${VIRTUAL_NETWORKS_PATH_SUFFIX}`,
+          token,
+          authHeaders
+        )
+      ]);
+    } catch (error) {
+      if (isUnsupportedBlueprintApiError(error)) {
+        throw createError("Blueprint does not expose security zones", "BLUEPRINT_UNSUPPORTED", {
+          blueprintDesign: blueprint.design
+        });
+      }
 
-    const vrfs = normalizeSecurityZoneCollection(securityZonePayload)
-      .filter((zone) => zone.stretchKey);
+      throw error;
+    }
+
+    const securityZones = normalizeSecurityZoneCollection(securityZonePayload);
+    const securityZoneById = new Map(securityZones.map((zone) => [zone.id, zone]));
+    const vrfs = securityZones.filter((zone) => zone.stretchKey);
 
     return {
       blueprintId: blueprint.id,
       blueprintName: blueprint.name,
       vrfCount: vrfs.length,
+      conflictIndex: buildBlueprintConflictIndex(
+        normalizeVirtualNetworkCollection(virtualNetworkPayload, securityZoneById),
+        securityZones
+      ),
       vrfs,
       vrfByStretchKey: new Map(vrfs.map((zone) => [zone.stretchKey, zone]))
     };
@@ -1605,6 +1758,12 @@ async function fetchBlueprintVrfFacts(connection, token, authHeaders) {
     }
 
     const context = result.reason?.context;
+
+    if (result.reason?.code === "BLUEPRINT_UNSUPPORTED") {
+      skippedBlueprints.push(buildSkippedBlueprintEntry(context, result.reason?.blueprintDesign));
+      continue;
+    }
+
     partialFailures.push({
       blueprintId: context?.blueprintId || "unknown",
       blueprintName: context?.blueprintName || "Unknown blueprint",
@@ -1636,7 +1795,9 @@ async function fetchBlueprintVrfFacts(connection, token, authHeaders) {
         vrfId: vrf.id,
         label: vrf.label,
         vrfName: vrf.vrfName,
-        vrfType: vrf.type
+        vrfType: vrf.type,
+        vniId: vrf.vniId,
+        vlanId: vrf.vlanId
       });
 
       if (vrf.label && !row.labels.includes(vrf.label)) {
@@ -1673,51 +1834,59 @@ async function fetchBlueprintVrfFacts(connection, token, authHeaders) {
 
   return {
     partialFailures,
+    skippedBlueprints,
     blueprintRows,
     rows
   };
 }
 
 async function fetchBlueprintVxlanFacts(connection, token, authHeaders) {
-  const blueprints = (await fetchCollection(connection, `${API_ROOT}/blueprints`, token, authHeaders))
+  const allBlueprints = (await fetchCollection(connection, `${API_ROOT}/blueprints`, token, authHeaders))
     .map(normalizeBlueprint)
     .filter((item) => item.id);
+
+  const { supported: blueprints, skipped: skippedBlueprints } = partitionBlueprintsByDesign(allBlueprints);
 
   const partialFailures = [];
 
   const settledResults = await mapWithConcurrency(blueprints, 4, async (blueprint) => {
     const encodedId = encodeURIComponent(blueprint.id);
 
-    const [virtualNetworkPayload, securityZonePayload, systemNodes] = await Promise.all([
-      apiGet(
-        connection,
-        `${API_ROOT}/blueprints/${encodedId}/${VIRTUAL_NETWORKS_PATH_SUFFIX}`,
-        token,
-        authHeaders
-      ),
-      apiGet(
-        connection,
-        `${API_ROOT}/blueprints/${encodedId}/${SECURITY_ZONES_PATH_SUFFIX}`,
-        token,
-        authHeaders
-      ),
-      fetchBlueprintSystemNodes(connection, blueprint.id, token, authHeaders)
-    ]);
+    let virtualNetworkPayload;
+    let securityZonePayload;
+    try {
+      [virtualNetworkPayload, securityZonePayload] = await Promise.all([
+        apiGet(
+          connection,
+          `${API_ROOT}/blueprints/${encodedId}/${VIRTUAL_NETWORKS_PATH_SUFFIX}`,
+          token,
+          authHeaders
+        ),
+        apiGet(
+          connection,
+          `${API_ROOT}/blueprints/${encodedId}/${SECURITY_ZONES_PATH_SUFFIX}`,
+          token,
+          authHeaders
+        )
+      ]);
+    } catch (error) {
+      if (isUnsupportedBlueprintApiError(error)) {
+        throw createError("Blueprint does not expose virtual networks", "BLUEPRINT_UNSUPPORTED", {
+          blueprintDesign: blueprint.design
+        });
+      }
+
+      throw error;
+    }
+
+    const systemNodes = await fetchBlueprintBindingTargets(connection, blueprint.id, token, authHeaders);
 
     const securityZones = normalizeSecurityZoneCollection(securityZonePayload);
     const securityZoneById = new Map(securityZones.map((zone) => [zone.id, zone]));
 
     const vxlans = normalizeVirtualNetworkCollection(virtualNetworkPayload, securityZoneById);
     const vxlanByStretchKey = new Map(vxlans.map((vn) => [vn.stretchKey, vn]));
-    const existingBoundSystemIds = dedupeStrings(
-      vxlans.flatMap((vxlan) => (vxlan.boundTo || []).map((binding) => binding.systemId).filter(Boolean))
-    );
-    const switchSystemIds = dedupeStrings(
-      systemNodes
-        .filter((node) => isSwitchSystemRole(node.role))
-        .map((node) => node.id)
-        .concat(existingBoundSystemIds)
-    );
+    const switchSystemIds = dedupeStrings(systemNodes);
 
     return {
       blueprintId: blueprint.id,
@@ -1731,6 +1900,8 @@ async function fetchBlueprintVxlanFacts(connection, token, authHeaders) {
           .filter((zone) => zone.labelKey)
           .map((zone) => [zone.labelKey, zone.id])
       ),
+      securityZoneLabelKeys: dedupeStrings(securityZones.map((zone) => zone.labelKey).filter(Boolean)),
+      conflictIndex: buildBlueprintConflictIndex(vxlans, securityZones),
       assignableSystemIds: switchSystemIds,
       vxlans,
       vxlanByStretchKey
@@ -1746,6 +1917,12 @@ async function fetchBlueprintVxlanFacts(connection, token, authHeaders) {
     }
 
     const context = result.reason?.context;
+
+    if (result.reason?.code === "BLUEPRINT_UNSUPPORTED") {
+      skippedBlueprints.push(buildSkippedBlueprintEntry(context, result.reason?.blueprintDesign));
+      continue;
+    }
+
     partialFailures.push({
       blueprintId: context?.blueprintId || "unknown",
       blueprintName: context?.blueprintName || "Unknown blueprint",
@@ -1765,6 +1942,7 @@ async function fetchBlueprintVxlanFacts(connection, token, authHeaders) {
           vnId: vxlan.vnId,
           vnType: vxlan.vnType,
           primaryLabel: vxlan.label,
+          securityZoneLabelKey: normalizeLookupKey(vxlan.securityZoneLabel || ""),
           labels: [vxlan.label],
           securityZoneLabels: vxlan.securityZoneLabel ? [vxlan.securityZoneLabel] : [],
           ipv4Subnets: vxlan.ipv4Subnet ? [vxlan.ipv4Subnet] : [],
@@ -1779,7 +1957,8 @@ async function fetchBlueprintVxlanFacts(connection, token, authHeaders) {
         blueprintName: blueprint.blueprintName,
         vxlanId: vxlan.id,
         label: vxlan.label,
-        vnId: vxlan.vnId
+        vnId: vxlan.vnId,
+        vlanId: resolveSourceVlanId(vxlan)
       });
 
       if (vxlan.label && !row.labels.includes(vxlan.label)) {
@@ -1806,6 +1985,7 @@ async function fetchBlueprintVxlanFacts(connection, token, authHeaders) {
       vnId: row.vnId,
       vnType: row.vnType,
       primaryLabel: row.primaryLabel,
+      securityZoneLabelKey: row.securityZoneLabelKey,
       labels: row.labels.sort((a, b) => a.localeCompare(b)),
       securityZoneLabels: row.securityZoneLabels.sort((a, b) => a.localeCompare(b)),
       ipv4Subnets: row.ipv4Subnets.sort((a, b) => a.localeCompare(b)),
@@ -1828,6 +2008,7 @@ async function fetchBlueprintVxlanFacts(connection, token, authHeaders) {
 
   return {
     partialFailures,
+    skippedBlueprints,
     blueprintRows,
     rows
   };
@@ -1839,6 +2020,101 @@ function normalizeVirtualNetworkCollection(payload, securityZoneById) {
   return values
     .map((item) => normalizeVirtualNetwork(item, securityZoneById))
     .filter((item) => item.stretchKey);
+}
+
+// VNIs share one namespace per blueprint across virtual networks AND routing zones.
+// VN VLANs must be unique per leaf; routing-zone VLANs must be unique blueprint-wide.
+function buildBlueprintConflictIndex(vxlans, securityZones) {
+  const vniOwners = {};
+  const routingZoneVlans = {};
+  const vlansBySystem = {};
+
+  for (const zone of securityZones) {
+    const vni = asString(zone.vniId).trim();
+    if (vni) {
+      vniOwners[vni] = { kind: "routing_zone", label: zone.label };
+    }
+
+    const vlanId = asVlanId(zone.vlanId);
+    if (vlanId !== null) {
+      routingZoneVlans[String(vlanId)] = zone.label;
+    }
+  }
+
+  for (const vxlan of vxlans) {
+    const vni = asString(vxlan.vnId).trim();
+    if (vni) {
+      vniOwners[vni] = { kind: "virtual_network", label: vxlan.label };
+    }
+
+    for (const binding of vxlan.boundTo || []) {
+      const vlanId = asVlanId(binding.vlanId);
+      if (vlanId === null || !binding.systemId) {
+        continue;
+      }
+
+      if (!vlansBySystem[binding.systemId]) {
+        vlansBySystem[binding.systemId] = {};
+      }
+
+      vlansBySystem[binding.systemId][String(vlanId)] = vxlan.label;
+    }
+  }
+
+  return { vniOwners, routingZoneVlans, vlansBySystem };
+}
+
+// Returns the reason a source object cannot be created in this blueprint, or null when clear.
+function findStretchConflict(target, { vni, vlanId, isRoutingZone, systemIds }) {
+  const index = target?.conflictIndex;
+  if (!index) {
+    return null;
+  }
+
+  const vniKey = asString(vni).trim();
+  const owner = vniKey ? index.vniOwners[vniKey] : null;
+  if (owner) {
+    return {
+      type: "vni",
+      value: vniKey,
+      ownerKind: owner.kind,
+      ownerLabel: owner.label,
+      message: `VNI ${vniKey} is already used by ${owner.kind === "routing_zone" ? "routing zone" : "virtual network"} "${owner.label}" in ${target.blueprintName}.`
+    };
+  }
+
+  const vlan = asVlanId(vlanId);
+  if (vlan === null) {
+    return null;
+  }
+
+  const zoneOwner = index.routingZoneVlans[String(vlan)];
+  if (zoneOwner && isRoutingZone) {
+    return {
+      type: "vlan",
+      value: String(vlan),
+      ownerKind: "routing_zone",
+      ownerLabel: zoneOwner,
+      message: `VLAN ${vlan} is already used by routing zone "${zoneOwner}" in ${target.blueprintName}.`
+    };
+  }
+
+  if (!isRoutingZone) {
+    for (const systemId of systemIds || []) {
+      const vnOwner = index.vlansBySystem?.[systemId]?.[String(vlan)];
+      if (vnOwner) {
+        return {
+          type: "vlan",
+          value: String(vlan),
+          ownerKind: "virtual_network",
+          ownerLabel: vnOwner,
+          message: `VLAN ${vlan} is already used by virtual network "${vnOwner}" on a target switch in ${target.blueprintName}.`
+        };
+      }
+    }
+  }
+
+  return null;
 }
 
 function normalizeVirtualNetwork(value, securityZoneById) {
@@ -1921,6 +2197,8 @@ function normalizeSecurityZoneCollection(payload) {
         type: firstString(zone, ["sz_type", "type"]) || "",
         vrfName: firstString(zone, ["vrf_name", "routing_zone_name"]) || label,
         vnId: firstString(zone, ["vn_id", "vni"]) || "",
+        vniId: zone.vni_id === null || zone.vni_id === undefined ? "" : String(zone.vni_id).trim(),
+        vlanId: asVlanId(zone.vlan_id),
         description: zone.description === null ? null : asString(zone.description),
         rtPolicy: zone.rt_policy ?? null,
         routeTarget: firstString(zone, ["route_target"]) || "",
@@ -1977,7 +2255,13 @@ function stripSecurityZoneReadOnlyFields(zone) {
       lowerKey === "_id" ||
       lowerKey === "_key" ||
       lowerKey === "_rev" ||
-      lowerKey === "links"
+      lowerKey === "links" ||
+      // References/allocations that only exist inside the source blueprint.
+      lowerKey === "vrf_id" ||
+      lowerKey === "routing_policy_id" ||
+      lowerKey === "policy_id" ||
+      lowerKey === "virtual_network_policy_id" ||
+      lowerKey === "vlan_id"
     ) {
       continue;
     }
@@ -2049,13 +2333,12 @@ function resolveTargetSecurityZoneId(sourceVxlan, sourceBlueprint, targetBluepri
   return targetBlueprint.securityZoneByLabelKey.get(sourceZoneKey) || "";
 }
 
-function buildVirtualNetworkCreatePayload(sourceVxlan, targetSecurityZoneId, boundTo) {
+function buildVirtualNetworkCreatePayload(sourceVxlan, targetSecurityZoneId, boundTo, autoAssignVlan = false) {
   const payload = {
     label: sourceVxlan.label,
     description: sourceVxlan.description,
     vn_type: sourceVxlan.vnType || "vxlan",
     vn_id: sourceVxlan.vnId || undefined,
-    reserved_vlan_id: sourceVxlan.reservedVlanId,
     ipv4_subnet: sourceVxlan.ipv4Subnet || null,
     ipv6_subnet: sourceVxlan.ipv6Subnet || null,
     virtual_gateway_ipv4: sourceVxlan.virtualGatewayIpv4 || null,
@@ -2075,6 +2358,16 @@ function buildVirtualNetworkCreatePayload(sourceVxlan, targetSecurityZoneId, bou
     bound_to: boundTo
   };
 
+  // Apstra rejects a null/0 reserved_vlan_id, so only send a real reservation.
+  const reservedVlanId = autoAssignVlan ? null : asVlanId(sourceVxlan.reservedVlanId);
+  if (reservedVlanId !== null) {
+    payload.reserved_vlan_id = reservedVlanId;
+  }
+
+  if (asFiniteNumber(sourceVxlan.l3Mtu) === null) {
+    delete payload.l3_mtu;
+  }
+
   return stripUndefinedProperties(payload);
 }
 
@@ -2082,13 +2375,12 @@ function buildSecurityZoneCreatePayload(sourceVrf) {
   const rawSource = sourceVrf?.rawSource && typeof sourceVrf.rawSource === "object"
     ? sourceVrf.rawSource
     : {};
-  const hasRawVni = Object.prototype.hasOwnProperty.call(rawSource, "vni");
-  const hasRawVnId = Object.prototype.hasOwnProperty.call(rawSource, "vn_id");
 
+  // Everything else (vni_id, vrf_description, junos_evpn_irb_mode, addressing_support,
+  // disable_ipv4, vtep_addressing, l3_mtu) is carried over from the source zone as-is.
   const payload = {
     ...stripSecurityZoneReadOnlyFields(rawSource),
     label: sourceVrf.label,
-    description: sourceVrf.description,
     sz_type: sourceVrf.type || undefined,
     vrf_name: sourceVrf.vrfName || undefined,
     rt_policy: sourceVrf.rtPolicy ?? null,
@@ -2097,31 +2389,16 @@ function buildSecurityZoneCreatePayload(sourceVrf) {
     tags: Array.isArray(sourceVrf.tags) ? sourceVrf.tags : []
   };
 
-  if (sourceVrf.vnId) {
-    if (hasRawVni && !hasRawVnId) {
-      payload.vni = sourceVrf.vnId;
-    } else {
-      payload.vn_id = sourceVrf.vnId;
-    }
-  }
-
-  if (Array.isArray(sourceVrf.importRouteTargets) && sourceVrf.importRouteTargets.length > 0) {
-    payload.import_route_targets = sourceVrf.importRouteTargets;
-  }
-
-  if (Array.isArray(sourceVrf.exportRouteTargets) && sourceVrf.exportRouteTargets.length > 0) {
-    payload.export_route_targets = sourceVrf.exportRouteTargets;
+  const l3Mtu = asFiniteNumber(payload.l3_mtu);
+  if (payload.l3_mtu !== null && (l3Mtu === null || l3Mtu < 1280 || l3Mtu > 9216)) {
+    delete payload.l3_mtu;
   }
 
   return stripUndefinedProperties(payload);
 }
 
-function buildTargetBoundToBindings(sourceVxlan, targetSystemIds) {
-  const sourceBindings = Array.isArray(sourceVxlan?.boundTo) ? sourceVxlan.boundTo : [];
-  const fallbackVlanId =
-    sourceBindings.find((binding) => Number.isFinite(binding.vlanId))?.vlanId ??
-    sourceVxlan?.reservedVlanId ??
-    null;
+function buildTargetBoundToBindings(sourceVxlan, targetSystemIds, autoAssignVlan = false) {
+  const fallbackVlanId = autoAssignVlan ? null : resolveSourceVlanId(sourceVxlan);
 
   return dedupeStrings(targetSystemIds || []).map((systemId) => {
     const binding = {
@@ -2129,12 +2406,22 @@ function buildTargetBoundToBindings(sourceVxlan, targetSystemIds) {
       access_switch_node_ids: []
     };
 
-    if (Number.isFinite(fallbackVlanId)) {
+    if (fallbackVlanId !== null) {
       binding.vlan_id = fallbackVlanId;
     }
 
     return binding;
   });
+}
+
+// The VLAN a stretched copy would claim on each target switch.
+function resolveSourceVlanId(sourceVxlan) {
+  const sourceBindings = Array.isArray(sourceVxlan?.boundTo) ? sourceVxlan.boundTo : [];
+
+  return (
+    sourceBindings.map((binding) => asVlanId(binding.vlanId)).find((vlanId) => vlanId !== null) ??
+    asVlanId(sourceVxlan?.reservedVlanId)
+  );
 }
 
 function choosePreferredScopeSourceBlueprintId(candidateIds, preferredSourceBlueprintId, blueprintMap) {
@@ -2155,33 +2442,59 @@ function choosePreferredScopeSourceBlueprintId(candidateIds, preferredSourceBlue
     })[0];
 }
 
-function isSwitchSystemRole(roleValue) {
-  const role = normalizeLookupKey(asString(roleValue));
-  return role === "leaf" || role === "access" || role === "access_switch" || role === "tor";
-}
-
-async function fetchBlueprintSystemNodes(connection, blueprintId, token, authHeaders) {
+// bound_to.system_id must be a leaf system or a leaf pair (redundancy group of leaves).
+// Access switches and access redundancy groups belong in access_switch_node_ids, so they are excluded.
+async function fetchBlueprintBindingTargets(connection, blueprintId, token, authHeaders) {
   const encodedId = encodeURIComponent(blueprintId);
-  const query = "{ system_nodes { id role } }";
+  const path = `${API_ROOT}/blueprints/${encodedId}/ql`;
 
-  const payload = await apiPost(
-    connection,
-    `${API_ROOT}/blueprints/${encodedId}/ql`,
-    { query },
-    token,
-    authHeaders
-  );
+  let payload;
+  try {
+    payload = await apiPost(
+      connection,
+      path,
+      { query: "{ system_nodes { id role } redundancy_group_nodes { id composed_of_systems_targets { id role } } }" },
+      token,
+      authHeaders
+    );
+  } catch {
+    payload = await apiPost(connection, path, { query: "{ system_nodes { id role } }" }, token, authHeaders);
+  }
 
-  const nodes = Array.isArray(payload?.data?.system_nodes)
-    ? payload.data.system_nodes
+  const systemNodes = Array.isArray(payload?.data?.system_nodes) ? payload.data.system_nodes : [];
+  const redundancyGroups = Array.isArray(payload?.data?.redundancy_group_nodes)
+    ? payload.data.redundancy_group_nodes
     : [];
 
-  return nodes
-    .map((item) => ({
-      id: firstString(item, ["id", "uuid"]) || "",
-      role: firstString(item, ["role"]) || ""
-    }))
-    .filter((item) => item.id);
+  const groupedSystemIds = new Set();
+  const leafGroupIds = [];
+
+  for (const group of redundancyGroups) {
+    const members = Array.isArray(group?.composed_of_systems_targets) ? group.composed_of_systems_targets : [];
+
+    for (const member of members) {
+      const memberId = firstString(member, ["id", "uuid"]) || "";
+      if (memberId) {
+        groupedSystemIds.add(memberId);
+      }
+    }
+
+    const groupId = firstString(group, ["id", "uuid"]) || "";
+    const isLeafGroup = members.some(
+      (member) => normalizeLookupKey(firstString(member, ["role"]) || "") === "leaf"
+    );
+
+    if (groupId && isLeafGroup) {
+      leafGroupIds.push(groupId);
+    }
+  }
+
+  const standaloneLeafIds = systemNodes
+    .filter((node) => normalizeLookupKey(firstString(node, ["role"]) || "") === "leaf")
+    .map((node) => firstString(node, ["id", "uuid"]) || "")
+    .filter((id) => id && !groupedSystemIds.has(id));
+
+  return dedupeStrings([...leafGroupIds, ...standaloneLeafIds]);
 }
 
 function stripUndefinedProperties(value) {
@@ -2335,7 +2648,7 @@ async function apiGet(connection, path, token, authHeaders = {}) {
 
     if (!tabResult.ok) {
       throw createError(
-        buildApiFailureMessage(tabResult.status, path),
+        buildApiFailureMessage(tabResult.status, path, tabResult.data || tabResult.text),
         "API_REQUEST_FAILED",
         { responseStatus: tabResult.status, responseBody: tabResult.data || tabResult.text }
       );
@@ -2362,7 +2675,7 @@ async function apiGet(connection, path, token, authHeaders = {}) {
 
   if (!response.ok) {
     throw createError(
-      buildApiFailureMessage(response.status, path),
+      buildApiFailureMessage(response.status, path, data || text),
       "API_REQUEST_FAILED",
       { responseStatus: response.status, responseBody: data || text }
     );
@@ -2385,7 +2698,7 @@ async function apiDelete(connection, path, token, authHeaders = {}) {
   if (connection?.tabId) {
     const result = await apiCallFromTab(connection.tabId, connection.origin, path, "DELETE", headers);
     if (!result.ok) {
-      throw createError(buildApiFailureMessage(result.status, path), "API_REQUEST_FAILED", {
+      throw createError(buildApiFailureMessage(result.status, path, result.data || result.text), "API_REQUEST_FAILED", {
         responseStatus: result.status,
         responseBody: result.data || result.text
       });
@@ -2408,7 +2721,7 @@ async function apiDelete(connection, path, token, authHeaders = {}) {
   const data = tryParseJson(text);
 
   if (!response.ok) {
-    throw createError(buildApiFailureMessage(response.status, path), "API_REQUEST_FAILED", {
+    throw createError(buildApiFailureMessage(response.status, path, data || text), "API_REQUEST_FAILED", {
       responseStatus: response.status,
       responseBody: data || text
     });
@@ -2432,7 +2745,7 @@ async function apiPost(connection, path, body, token, authHeaders = {}) {
   if (connection?.tabId) {
     const result = await apiCallFromTab(connection.tabId, connection.origin, path, "POST", headers, body);
     if (!result.ok) {
-      throw createError(buildApiFailureMessage(result.status, path), "API_REQUEST_FAILED", {
+      throw createError(buildApiFailureMessage(result.status, path, result.data || result.text), "API_REQUEST_FAILED", {
         responseStatus: result.status,
         responseBody: result.data || result.text
       });
@@ -2456,7 +2769,7 @@ async function apiPost(connection, path, body, token, authHeaders = {}) {
   const data = tryParseJson(text);
 
   if (!response.ok) {
-    throw createError(buildApiFailureMessage(response.status, path), "API_REQUEST_FAILED", {
+    throw createError(buildApiFailureMessage(response.status, path, data || text), "API_REQUEST_FAILED", {
       responseStatus: response.status,
       responseBody: data || text
     });
@@ -2480,7 +2793,7 @@ async function apiPut(connection, path, body, token, authHeaders = {}) {
   if (connection?.tabId) {
     const result = await apiCallFromTab(connection.tabId, connection.origin, path, "PUT", headers, body);
     if (!result.ok) {
-      throw createError(buildApiFailureMessage(result.status, path), "API_REQUEST_FAILED", {
+      throw createError(buildApiFailureMessage(result.status, path, result.data || result.text), "API_REQUEST_FAILED", {
         responseStatus: result.status,
         responseBody: result.data || result.text
       });
@@ -2504,7 +2817,7 @@ async function apiPut(connection, path, body, token, authHeaders = {}) {
   const data = tryParseJson(text);
 
   if (!response.ok) {
-    throw createError(buildApiFailureMessage(response.status, path), "API_REQUEST_FAILED", {
+    throw createError(buildApiFailureMessage(response.status, path, data || text), "API_REQUEST_FAILED", {
       responseStatus: response.status,
       responseBody: data || text
     });
@@ -2873,7 +3186,54 @@ function normalizeBlueprint(value) {
     id ||
     "Unnamed blueprint";
 
-  return { id, name };
+  const design = normalizeLookupKey(
+    firstString(value, ["design", "reference_design", "blueprint_type", "type"]) ||
+      firstString(value?.blueprint, ["design", "reference_design", "blueprint_type", "type"]) ||
+      ""
+  );
+
+  return {
+    id,
+    name,
+    design,
+    isSupportedDesign: !UNSUPPORTED_BLUEPRINT_DESIGNS.has(design)
+  };
+}
+
+// Splits the blueprint list into ones this extension can query and ones (freeform) it must ignore.
+function partitionBlueprintsByDesign(blueprints) {
+  const supported = [];
+  const skipped = [];
+
+  for (const blueprint of blueprints) {
+    if (blueprint.isSupportedDesign) {
+      supported.push(blueprint);
+      continue;
+    }
+
+    skipped.push({
+      blueprintId: blueprint.id,
+      blueprintName: blueprint.name,
+      design: blueprint.design || "unknown",
+      message: `Skipped ${blueprint.design || "unsupported"} blueprint (no datacenter reference-design APIs).`
+    });
+  }
+
+  return { supported, skipped };
+}
+
+// A 404 on a datacenter-only endpoint means the blueprint is not a datacenter blueprint.
+function isUnsupportedBlueprintApiError(error) {
+  return error?.code === "API_REQUEST_FAILED" && error?.responseStatus === 404;
+}
+
+function buildSkippedBlueprintEntry(context, design) {
+  return {
+    blueprintId: context?.blueprintId || "unknown",
+    blueprintName: context?.blueprintName || "Unknown blueprint",
+    design: design || "unknown",
+    message: "Skipped blueprint: datacenter reference-design APIs are not available for it."
+  };
 }
 
 function normalizeConfiglet(value, options = {}) {
@@ -3320,8 +3680,37 @@ function gatewayConfidenceRank(confidence) {
 }
 
 function asFiniteNumber(value) {
+  // Number(null) and Number("") are 0, which would turn an absent field into a real value.
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function asVlanId(value) {
+  const parsed = asFiniteNumber(value);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 4094 ? parsed : null;
+}
+
+// Apstra populates vn_id/subnet on a newly created object asynchronously, so an
+// immediate re-read reports nulls and the refreshed report would look unchanged.
+function waitForApstraToMaterialize() {
+  return new Promise((resolve) => setTimeout(resolve, 2500));
+}
+
+// Streams each outcome to the popup so failures show up as they happen, not only at the end.
+function emitStretchProgress(kind, result, completed, total) {
+  try {
+    void chrome.runtime
+      .sendMessage({ type: "stretchProgress", kind, result, completed, total })
+      .catch(() => {
+        // No popup listening; progress is still returned in the final response.
+      });
+  } catch {
+    // Ignore messaging errors entirely; progress is best-effort.
+  }
 }
 
 function normalizeMultilineText(value) {
@@ -3438,10 +3827,63 @@ function createError(message, code, meta = {}) {
   return error;
 }
 
-function buildApiFailureMessage(status, path) {
+function buildApiFailureMessage(status, path, body) {
   if (status === 401) {
     return `API request failed (401) for ${path}. Generate fresh API traffic in the Data Center Director tab, then click Refresh Status and Load Report again.`;
   }
 
-  return `API request failed (${status}) for ${path}`;
+  const detail = extractApiErrorDetail(body);
+  return detail
+    ? `API request failed (${status}) for ${path}: ${detail}`
+    : `API request failed (${status}) for ${path}`;
+}
+
+// Apstra reports rejection reasons in several shapes; surface whichever one is present.
+function extractApiErrorDetail(body) {
+  if (typeof body === "string") {
+    return body.trim().slice(0, 400);
+  }
+
+  if (!body || typeof body !== "object") {
+    return "";
+  }
+
+  const direct = firstString(body, ["detail", "error", "message", "errors"]);
+  if (direct) {
+    return direct.slice(0, 400);
+  }
+
+  const nested = body.errors && typeof body.errors === "object" ? body.errors : null;
+  if (nested) {
+    const nodeMessages = extractNodeErrorMessages(nested.nodes);
+    if (nodeMessages.length > 0) {
+      return dedupeStrings(nodeMessages).join("; ").slice(0, 400);
+    }
+
+    const parts = Object.entries(nested)
+      .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(", ") : JSON.stringify(value)}`)
+      .join("; ");
+
+    if (parts) {
+      return parts.slice(0, 400);
+    }
+  }
+
+  try {
+    return JSON.stringify(body).slice(0, 400);
+  } catch {
+    return "";
+  }
+}
+
+// Validation failures arrive as errors.nodes["<node id>"] = [{ message, error_type }].
+function extractNodeErrorMessages(nodes) {
+  if (!nodes || typeof nodes !== "object") {
+    return [];
+  }
+
+  return Object.values(nodes)
+    .flatMap((entries) => (Array.isArray(entries) ? entries : []))
+    .map((entry) => asString(entry?.message).trim())
+    .filter(Boolean);
 }

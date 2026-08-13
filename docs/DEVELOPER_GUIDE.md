@@ -130,6 +130,7 @@ stretchVxlans does this:
 5. For each selected row and target blueprint:
    - skip when VXLAN already exists in target
    - resolve target security zone (id match first, then label match)
+   - skip with skipped_zone_missing when the target has no matching routing zone (stretch the VRF first)
    - assign to all detected target switch systems by default
    - POST new VXLAN payload to /api/blueprints/{target_id}/virtual-networks
 6. Return per-target operation outcomes (created, skipped, failed) and summary counts.
@@ -154,8 +155,32 @@ stretchVrfs does this:
 4. Derive targets from missing blueprints in scope.
 5. For each selected row and target blueprint:
    - skip when VRF already exists in target
+   - drop source-blueprint-scoped fields (routing_policy_id, vrf_id, vlan_id) that the target cannot resolve
    - POST new security-zone payload to /api/blueprints/{target_id}/security-zones
 6. Return per-target operation outcomes (created, skipped, failed) and summary counts.
+
+### VNI / VLAN conflict detection
+
+Each blueprint row carries a conflictIndex built from data already fetched for the report:
+
+- vniOwners: VNI -> owning virtual network or routing zone. VNIs are a single shared namespace per
+  blueprint, so a VXLAN can collide with a routing zone's VNI and vice versa.
+- routingZoneVlans: VLAN -> routing zone. Routing-zone VLANs must be unique blueprint-wide.
+- vlansBySystem: system id -> VLAN -> virtual network. VN VLANs must be unique per leaf.
+
+The popup mirrors this in findTargetConflict to grey out and disable conflicted rows before any POST,
+and the service worker re-checks with freshly fetched facts in findStretchConflict, recording
+skipped_vni_conflict style outcomes as status "skipped_conflict" instead of issuing a doomed request.
+Being outside the target's VNI pool is NOT treated as a conflict; Apstra accepts explicit out-of-pool
+VNIs and real deployments rely on that for DCI networks.
+
+### Blueprint design filtering
+
+/api/blueprints reports a design per blueprint (for example two_stage_l3clos or freeform). Freeform
+blueprints do not expose configlets, virtual-networks, security-zones or the datacenter ql schema, so
+every report filters them out up front and also treats a 404 on those endpoints as an unsupported
+blueprint. They are returned in report.skippedBlueprints (informational) rather than
+report.partialFailures (error).
 
 ## Data Model Notes
 

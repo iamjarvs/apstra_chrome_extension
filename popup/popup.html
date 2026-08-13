@@ -258,8 +258,12 @@
               <p id="vxlanSummaryFull">-</p>
             </article>
             <article>
-              <h3>Stretchable</h3>
+              <h3>Ready To Stretch</h3>
               <p id="vxlanSummaryPartial">-</p>
+            </article>
+            <article>
+              <h3>Blocked (Conflict)</h3>
+              <p id="vxlanSummaryBlocked">-</p>
             </article>
           </section>
 
@@ -422,6 +426,10 @@
             <article>
               <h3>Stretchable</h3>
               <p id="vrfSummaryPartial">-</p>
+            </article>
+            <article>
+              <h3>Blocked (Conflict)</h3>
+              <p id="vrfSummaryBlocked">-</p>
             </article>
           </section>
 
@@ -688,6 +696,16 @@
       </div>
     </div>
 
+    <div id="vxlanRowDetailsModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="vxlanRowDetailsTitle">
+      <div class="modal-card">
+        <header class="modal-header">
+          <h3 id="vxlanRowDetailsTitle">VXLAN Details</h3>
+          <button id="closeVxlanRowDetailsButton" class="btn btn-secondary" type="button">Close</button>
+        </header>
+        <div id="vxlanRowDetailsBody" class="modal-body"></div>
+      </div>
+    </div>
+
     <div id="vxlanPlannerModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="vxlanPlannerTitle">
       <div class="modal-card vxlan-planner-modal">
         <header class="modal-header">
@@ -698,6 +716,15 @@
           <section class="vxlan-control-block">
             <h3>Step 2: Select VXLANs In This Scope</h3>
             <p class="cell-subtle">Optionally set a preferred source blueprint, then choose only the VXLANs you want stretched across missing blueprints in the selected scope.</p>
+          </section>
+
+          <section id="vxlanPrereqCallout" class="prereq-callout hidden">
+            <div class="prereq-copy">
+              <strong>Before you stretch</strong>
+              <p id="vxlanPrereqDetail"></p>
+              <div id="vxlanPrereqZones" class="prereq-zones"></div>
+            </div>
+            <button id="vxlanGoToVrfStretchButton" class="btn btn-secondary" type="button">VRF Stretch tool</button>
           </section>
 
           <section class="vxlan-planner-grid">
@@ -711,7 +738,13 @@
             <button id="vxlanSelectStretchableButton" class="btn btn-secondary" type="button">Select Stretchable</button>
             <button id="vxlanClearSelectionButton" class="btn btn-secondary" type="button">Clear Selection</button>
             <button id="vxlanStretchSelectedButton" class="btn btn-primary" type="button">Stretch Selected</button>
+            <label class="inline-toggle"><input id="vxlanHideBlockedToggle" type="checkbox"> Hide blocked candidates</label>
             <span id="vxlanPlannerSelectionStatus" class="cell-subtle">No VXLAN selected.</span>
+          </section>
+
+          <section id="vxlanProgressPanel" class="progress-panel hidden" aria-live="polite">
+            <strong id="vxlanProgressSummary">Starting...</strong>
+            <ul id="vxlanProgressIssues" class="progress-issues"></ul>
           </section>
 
           <section>
@@ -724,6 +757,7 @@
                   <col class="col-blueprints" />
                   <col class="col-blueprints" />
                   <col class="col-sync" />
+                  <col class="col-action" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -731,16 +765,81 @@
                     <th>VXLAN</th>
                     <th>Source In Scope</th>
                     <th>Targets In Scope</th>
-                    <th>Stretch Plan</th>
+                    <th>Status</th>
+                    <th>Details</th>
                   </tr>
                 </thead>
                 <tbody id="vxlanPlannerBody">
                   <tr class="placeholder-row">
-                    <td colspan="5">Open planner after loading VXLAN report.</td>
+                    <td colspan="6">Open planner after loading VXLAN report.</td>
                   </tr>
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section>
+            <h3 class="section-heading">Conflicts Detected (<span id="vxlanConflictCount">0</span>)</h3>
+            <div class="table-wrap table-wrap-unused" aria-live="polite">
+              <table class="active-table gateway-table">
+                <colgroup>
+                  <col class="col-configlet" />
+                  <col class="col-blueprints" />
+                  <col class="col-sync" />
+                  <col class="col-blueprints" />
+                  <col class="col-blueprints" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>VXLAN</th>
+                    <th>Target Blueprint</th>
+                    <th>Type</th>
+                    <th>Reason</th>
+                    <th>Resolution</th>
+                  </tr>
+                </thead>
+                <tbody id="vxlanConflictBody">
+                  <tr class="placeholder-row">
+                    <td colspan="5">No VNI or VLAN conflicts in the current scope.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="vrfRowDetailsModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="vrfRowDetailsTitle">
+      <div class="modal-card">
+        <header class="modal-header">
+          <h3 id="vrfRowDetailsTitle">VRF Details</h3>
+          <button id="closeVrfRowDetailsButton" class="btn btn-secondary" type="button">Close</button>
+        </header>
+        <div id="vrfRowDetailsBody" class="modal-body"></div>
+      </div>
+    </div>
+
+    <div id="vrfConfirmModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="vrfConfirmTitle">
+      <div class="modal-card">
+        <header class="modal-header">
+          <h3 id="vrfConfirmTitle">Routing zones required</h3>
+          <button id="vrfConfirmCancelButton" class="btn btn-secondary" type="button">Cancel</button>
+        </header>
+        <div class="modal-body">
+          <p class="cell-subtle" id="vrfConfirmIntro"></p>
+
+          <section class="vxlan-action-row">
+            <button id="vrfConfirmSelectAllButton" class="btn btn-secondary" type="button">Select All</button>
+            <button id="vrfConfirmSelectNoneButton" class="btn btn-secondary" type="button">Select None</button>
+            <span id="vrfConfirmStatus" class="cell-subtle"></span>
+          </section>
+
+          <div id="vrfConfirmList" class="vrf-confirm-list"></div>
+
+          <section class="vxlan-action-row">
+            <button id="vrfConfirmProceedButton" class="btn btn-primary" type="button">Stretch VRFs + VXLANs</button>
+            <button id="vrfConfirmSkipButton" class="btn btn-secondary" type="button">Skip VRFs, stretch VXLANs only</button>
           </section>
         </div>
       </div>
@@ -769,7 +868,13 @@
             <button id="vrfSelectStretchableButton" class="btn btn-secondary" type="button">Select Stretchable</button>
             <button id="vrfClearSelectionButton" class="btn btn-secondary" type="button">Clear Selection</button>
             <button id="vrfStretchSelectedButton" class="btn btn-primary" type="button">Stretch Selected</button>
+            <label class="inline-toggle"><input id="vrfHideBlockedToggle" type="checkbox"> Hide blocked candidates</label>
             <span id="vrfPlannerSelectionStatus" class="cell-subtle">No VRF selected.</span>
+          </section>
+
+          <section id="vrfProgressPanel" class="progress-panel hidden" aria-live="polite">
+            <strong id="vrfProgressSummary">Starting...</strong>
+            <ul id="vrfProgressIssues" class="progress-issues"></ul>
           </section>
 
           <section>
@@ -782,6 +887,7 @@
                   <col class="col-blueprints" />
                   <col class="col-blueprints" />
                   <col class="col-sync" />
+                  <col class="col-action" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -789,12 +895,13 @@
                     <th>VRF</th>
                     <th>Source In Scope</th>
                     <th>Targets In Scope</th>
-                    <th>Stretch Plan</th>
+                    <th>Status</th>
+                    <th>Details</th>
                   </tr>
                 </thead>
                 <tbody id="vrfPlannerBody">
                   <tr class="placeholder-row">
-                    <td colspan="5">Open planner after loading VRF report.</td>
+                    <td colspan="6">Open planner after loading VRF report.</td>
                   </tr>
                 </tbody>
               </table>
