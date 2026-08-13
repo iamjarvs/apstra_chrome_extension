@@ -923,6 +923,13 @@ async function stretchVrfs(request) {
     throw createError("Select at least one VRF to stretch", "BAD_REQUEST");
   }
 
+  // Keys the user asked to stretch without pinning the source VLAN, so Apstra allocates a free one.
+  const autoVlanStretchKeys = new Set(
+    Array.isArray(request?.autoVlanStretchKeys)
+      ? request.autoVlanStretchKeys.map((item) => asString(item).trim()).filter(Boolean)
+      : []
+  );
+
   const tokenInfo = tokenCache.get(connection.origin) || {};
   const token = tokenInfo.token || null;
   const authHeaders = sanitizeCapturedHeaders(tokenInfo.authHeaders || {});
@@ -1068,10 +1075,10 @@ async function stretchVrfs(request) {
         continue;
       }
 
-      // vlan_id is stripped from the payload, so only the VNI can collide.
+      const autoVlan = autoVlanStretchKeys.has(stretchKey);
       const conflict = findStretchConflict(targetBlueprint, {
         vni: sourceVrf.vniId,
-        vlanId: null,
+        vlanId: autoVlan ? null : sourceVrf.vlanId,
         isRoutingZone: true
       });
 
@@ -1089,7 +1096,7 @@ async function stretchVrfs(request) {
         continue;
       }
 
-      const payload = buildSecurityZoneCreatePayload(sourceVrf);
+      const payload = buildSecurityZoneCreatePayload(sourceVrf, autoVlan);
 
       try {
         await apiPost(
@@ -2028,6 +2035,9 @@ function buildBlueprintConflictIndex(vxlans, securityZones) {
   const vniOwners = {};
   const routingZoneVlans = {};
   const vlansBySystem = {};
+  // Routing-zone VLANs must be unique against every other routing zone AND every
+  // virtual network VLAN in the blueprint, regardless of which leaf uses it.
+  const blueprintWideVlans = {};
 
   for (const zone of securityZones) {
     const vni = asString(zone.vniId).trim();
@@ -2038,6 +2048,7 @@ function buildBlueprintConflictIndex(vxlans, securityZones) {
     const vlanId = asVlanId(zone.vlanId);
     if (vlanId !== null) {
       routingZoneVlans[String(vlanId)] = zone.label;
+      blueprintWideVlans[String(vlanId)] = { kind: "routing_zone", label: zone.label };
     }
   }
 
@@ -2047,9 +2058,20 @@ function buildBlueprintConflictIndex(vxlans, securityZones) {
       vniOwners[vni] = { kind: "virtual_network", label: vxlan.label };
     }
 
+    const reservedVlanId = asVlanId(vxlan.reservedVlanId);
+    if (reservedVlanId !== null) {
+      blueprintWideVlans[String(reservedVlanId)] = { kind: "virtual_network", label: vxlan.label };
+    }
+
     for (const binding of vxlan.boundTo || []) {
       const vlanId = asVlanId(binding.vlanId);
-      if (vlanId === null || !binding.systemId) {
+      if (vlanId === null) {
+        continue;
+      }
+
+      blueprintWideVlans[String(vlanId)] = { kind: "virtual_network", label: vxlan.label };
+
+      if (!binding.systemId) {
         continue;
       }
 
@@ -2061,7 +2083,7 @@ function buildBlueprintConflictIndex(vxlans, securityZones) {
     }
   }
 
-  return { vniOwners, routingZoneVlans, vlansBySystem };
+  return { vniOwners, routingZoneVlans, blueprintWideVlans, vlansBySystem };
 }
 
 // Returns the reason a source object cannot be created in this blueprint, or null when clear.
@@ -2088,15 +2110,19 @@ function findStretchConflict(target, { vni, vlanId, isRoutingZone, systemIds }) 
     return null;
   }
 
-  const zoneOwner = index.routingZoneVlans[String(vlan)];
-  if (zoneOwner && isRoutingZone) {
-    return {
-      type: "vlan",
-      value: String(vlan),
-      ownerKind: "routing_zone",
-      ownerLabel: zoneOwner,
-      message: `VLAN ${vlan} is already used by routing zone "${zoneOwner}" in ${target.blueprintName}.`
-    };
+  if (isRoutingZone) {
+    const zoneOwner = index.blueprintWideVlans?.[String(vlan)];
+    if (zoneOwner) {
+      return {
+        type: "vlan",
+        value: String(vlan),
+        ownerKind: zoneOwner.kind,
+        ownerLabel: zoneOwner.label,
+        message: `VLAN ${vlan} is already used by ${zoneOwner.kind === "routing_zone" ? "routing zone" : "virtual network"} "${zoneOwner.label}" in ${target.blueprintName}.`
+      };
+    }
+
+    return null;
   }
 
   if (!isRoutingZone) {
@@ -2371,7 +2397,7 @@ function buildVirtualNetworkCreatePayload(sourceVxlan, targetSecurityZoneId, bou
   return stripUndefinedProperties(payload);
 }
 
-function buildSecurityZoneCreatePayload(sourceVrf) {
+function buildSecurityZoneCreatePayload(sourceVrf, autoAssignVlan = false) {
   const rawSource = sourceVrf?.rawSource && typeof sourceVrf.rawSource === "object"
     ? sourceVrf.rawSource
     : {};
@@ -2392,6 +2418,12 @@ function buildSecurityZoneCreatePayload(sourceVrf) {
   const l3Mtu = asFiniteNumber(payload.l3_mtu);
   if (payload.l3_mtu !== null && (l3Mtu === null || l3Mtu < 1280 || l3Mtu > 9216)) {
     delete payload.l3_mtu;
+  }
+
+  // stripSecurityZoneReadOnlyFields drops vlan_id; put it back unless the user opted out.
+  const vlanId = autoAssignVlan ? null : asVlanId(sourceVrf.vlanId);
+  if (vlanId !== null) {
+    payload.vlan_id = vlanId;
   }
 
   return stripUndefinedProperties(payload);

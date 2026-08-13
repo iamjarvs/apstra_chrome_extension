@@ -167,6 +167,8 @@ const appState = {
   vxlanHideBlocked: false,
   vxlanAutoVlanKeys: new Set(),
   vxlanPlannerOrder: [],
+  vrfAutoVlanKeys: new Set(),
+  vrfPlannerOrder: [],
   stretchProgress: { vxlan: null, vrf: null },
   stretchProgressRoute: {},
   requiredVrfs: [],
@@ -611,12 +613,29 @@ function wireEvents() {
 
   elements.vrfPlannerBody.addEventListener("change", (event) => {
     const input = event.target instanceof HTMLInputElement ? event.target : null;
-    if (!input || input.name !== "vrf-select") {
+    if (!input) {
       return;
     }
 
     const stretchKey = input.dataset.stretchKey || "";
     if (!stretchKey) {
+      return;
+    }
+
+    if (input.name === "vrf-auto-vlan") {
+      if (input.checked) {
+        appState.vrfAutoVlanKeys.add(stretchKey);
+      } else {
+        appState.vrfAutoVlanKeys.delete(stretchKey);
+        appState.vrfSelectedStretchKeys.delete(stretchKey);
+      }
+
+      renderVrfSummary();
+      renderVrfTables();
+      return;
+    }
+
+    if (input.name !== "vrf-select") {
       return;
     }
 
@@ -1704,13 +1723,13 @@ function renderTargetPill(row, blueprintId) {
 // Summarises what still stands in the way: routing zones we can offer to create, and hard conflicts.
 // Ready rows sort first, but the order is frozen for a given candidate set so that
 // resolving a conflict in-place does not make the row jump away from the cursor.
-function applyStablePlannerOrder(allRows) {
+function applyStablePlannerOrder(allRows, stateKey = "vxlanPlannerOrder") {
   const keys = allRows.map((row) => row.stretchKey);
-  const cached = appState.vxlanPlannerOrder;
+  const cached = appState[stateKey];
   const sameSet = cached.length === keys.length && keys.every((key) => cached.includes(key));
 
   if (!sameSet) {
-    appState.vxlanPlannerOrder = [...allRows]
+    appState[stateKey] = [...allRows]
       .sort((left, right) => {
         if (left.stretchable !== right.stretchable) {
           return left.stretchable ? -1 : 1;
@@ -1721,7 +1740,7 @@ function applyStablePlannerOrder(allRows) {
       .map((row) => row.stretchKey);
   }
 
-  const order = appState.vxlanPlannerOrder;
+  const order = appState[stateKey];
   allRows.sort((left, right) => order.indexOf(left.stretchKey) - order.indexOf(right.stretchKey));
 }
 
@@ -2132,7 +2151,8 @@ async function stretchSelectedVxlans() {
       vrfResult = await sendMessage("stretchVrfs", {
         scopeBlueprintIds,
         preferredSourceBlueprintId: "",
-        stretchKeys: vrfStretchKeys
+        stretchKeys: vrfStretchKeys,
+        autoVlanStretchKeys: vrfStretchKeys.filter((key) => appState.vrfAutoVlanKeys.has(key))
       });
 
       appState.lastVrfStretchResult = vrfResult;
@@ -2727,14 +2747,7 @@ function renderVrfPlannerTable() {
       };
     });
 
-  // Ready-to-stretch rows first so a long blocked list never buries the actionable ones.
-  allRows.sort((left, right) => {
-    if (left.stretchable !== right.stretchable) {
-      return left.stretchable ? -1 : 1;
-    }
-
-    return (left.primaryLabel || "").localeCompare(right.primaryLabel || "");
-  });
+  applyStablePlannerOrder(allRows, "vrfPlannerOrder");
 
   const selectedKeySet = new Set(appState.vrfSelectedStretchKeys);
   for (const key of selectedKeySet) {
@@ -2806,6 +2819,7 @@ function renderVrfPlannerTable() {
         <td>
           ${planPill}
           ${planNote ? `<div class="cell-subtle">${escapeHtml(planNote)}</div>` : ""}
+          ${renderVrfAutoVlanControl(row)}
         </td>
         <td>
           <button class="btn btn-secondary btn-small" type="button" data-details-key="${escapeHtml(row.stretchKey)}">Details</button>
@@ -2832,6 +2846,7 @@ function renderVrfTargetPill(row, blueprintId) {
 function getVrfTargetReadiness(row) {
   const blueprints = Array.isArray(appState.vrfReport?.blueprints) ? appState.vrfReport.blueprints : [];
   const source = resolvePlannerSourceForVrfRow(row);
+  const autoVlan = appState.vrfAutoVlanKeys.has(row?.stretchKey);
   const ready = [];
   const conflicts = [];
 
@@ -2839,7 +2854,8 @@ function getVrfTargetReadiness(row) {
     const blueprint = blueprints.find((item) => item.blueprintId === blueprintId);
     const conflict = findTargetConflict(blueprint, {
       vni: source?.vniId ?? null,
-      vlanId: source?.vlanId ?? null,
+      // Letting Apstra allocate the VLAN removes the VLAN clash entirely.
+      vlanId: autoVlan ? null : source?.vlanId ?? null,
       isRoutingZone: true
     });
 
@@ -2854,8 +2870,30 @@ function getVrfTargetReadiness(row) {
   return {
     ready,
     conflicts,
+    autoVlan,
+    // A VLAN clash is fixable by letting Apstra allocate; a VNI clash is not.
+    vlanResolvable: conflicts.length > 0 && conflicts.every((item) => item.type === "vlan"),
     blocked: conflicts.map((item) => item.blueprintId)
   };
+}
+
+function renderVrfAutoVlanControl(row) {
+  const { vlanResolvable, autoVlan } = row.readiness;
+
+  if (!vlanResolvable && !autoVlan) {
+    return "";
+  }
+
+  const label = autoVlan
+    ? "Apstra will assign the VLAN for this routing zone"
+    : "Fix: let Apstra assign any free VLAN instead";
+
+  return `
+    <label class="auto-vlan-fix">
+      <input type="checkbox" name="vrf-auto-vlan" data-stretch-key="${escapeHtml(row.stretchKey)}" ${autoVlan ? "checked" : ""}>
+      <span>${escapeHtml(label)}</span>
+    </label>
+  `;
 }
 
 // Per-blueprint breakdown of exactly what would happen to one VRF and why.
@@ -3048,7 +3086,8 @@ async function stretchSelectedVrfs() {
         appState.vrfSourceBlueprintId && appState.vrfSourceBlueprintId !== "auto"
           ? appState.vrfSourceBlueprintId
           : "",
-      stretchKeys
+      stretchKeys,
+      autoVlanStretchKeys: stretchKeys.filter((key) => appState.vrfAutoVlanKeys.has(key))
     });
 
     appState.lastVrfStretchResult = result;
