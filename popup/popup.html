@@ -862,9 +862,9 @@
             </div>
           </section>
 
-          <section id="vrfConfirmWarningsSection" class="hidden">
-            <h3 class="section-heading">Warnings (<span id="vrfConfirmWarningCount">0</span>)</h3>
-            <p class="cell-subtle">These do not block the stretch, but Apstra will raise a build error until they are resolved.</p>
+          <section id="vrfConfirmWarningsSection" class="hidden overlap-warning">
+            <h3 class="section-heading">Overlapping IP ranges in the same VRF (<span id="vrfConfirmWarningCount">0</span>)</h3>
+            <p class="overlap-warning-lead">Are you sure you want overlapping IP ranges in the same VRF? Overlapping ranges only conflict inside a single routing zone, and Apstra will raise a build error until they are resolved. This does not block the stretch.</p>
             <ul id="vrfConfirmWarnings" class="progress-issues"></ul>
           </section>
 

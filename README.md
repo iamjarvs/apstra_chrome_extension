@@ -32,12 +32,12 @@ This repository contains a zero-configuration Chrome extension for Data Center D
   - Search, blueprint filter, sorting, and CSV export
 - Runs Gateway Links to correlate inter-blueprint gateway relationships and BGP evidence.
 - Runs scope-first VXLAN Stretch to bulk copy missing VXLANs across selected blueprints.
-- Runs scope-first VRF Stretch to bulk copy missing routing zones/security zones across selected blueprints.
+- Runs scope-first VRF Stretch to bulk copy missing routing zones/security zones across selected blueprints. Each copy is identical to the source apart from the identifiers that cannot be reused: the target assigns a new id, the routing policy is re-matched by name in the target blueprint, and the VLAN is only reassigned if you ask Apstra to allocate one.
 - Validates every stretch before pushing anything:
   - Skips freeform blueprints, which do not expose the datacenter APIs, and reports them as skipped rather than as errors.
   - Blocks candidates whose VNI is already used by a virtual network or routing zone in the target.
   - Blocks candidates whose VLAN is already taken, and offers a one-click fix that lets Apstra allocate a free VLAN instead while the VNI and subnet still stretch.
-  - Warns (without blocking) when an IPv4/IPv6 subnet would overlap an existing virtual network, because Apstra raises this as a build error after the fact.
+  - Warns (without blocking) when an IPv4/IPv6 subnet would overlap an existing virtual network in the same routing zone, and asks you to confirm you really want overlapping IP ranges in that VRF. Overlaps in different VRFs are not flagged, because keeping the same range isolated per VRF is exactly what a VRF is for.
   - Offers to create any missing routing zones first, then stretches the VXLANs in the same operation.
   - Shows a review page listing the routing zones and VXLANs to be created plus any warnings, and streams each outcome live so failures appear as they happen.
 - Includes an always-available feedback icon where users choose a feature request, issue, or feedback template before continuing to GitHub to complete it. GitHub sign-in is required to submit.

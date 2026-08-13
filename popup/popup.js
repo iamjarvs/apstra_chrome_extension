@@ -1741,16 +1741,19 @@ function renderAutoVlanControl(row) {
 }
 
 // Overlapping SVI subnets do not fail the API call; Apstra raises a build error afterwards.
-// So these are surfaced as warnings and never block a stretch.
+// They only matter WITHIN a routing zone: the same range in two different VRFs is legitimate,
+// which is the point of a VRF. So these are warnings, scoped to the same VRF, and never block.
 function getVxlanSubnetWarnings(row) {
   const blueprints = Array.isArray(appState.vxlanReport?.blueprints) ? appState.vxlanReport.blueprints : [];
   const readiness = getVxlanTargetReadiness(row);
+  const zoneKey = row.securityZoneLabelKey || "";
+  const zoneLabel = row.securityZoneLabels?.[0] || "the same routing zone";
   const sourceSubnets = [
     ...(row.ipv4Subnets || []).map((subnet) => ({ subnet, family: 4 })),
     ...(row.ipv6Subnets || []).map((subnet) => ({ subnet, family: 6 }))
   ];
 
-  if (sourceSubnets.length === 0) {
+  if (sourceSubnets.length === 0 || !zoneKey) {
     return [];
   }
 
@@ -1765,17 +1768,24 @@ function getVxlanSubnetWarnings(row) {
 
     for (const source of sourceSubnets) {
       for (const target of existing) {
-        if (source.family !== target.family || !subnetsOverlap(source.subnet, target.subnet)) {
+        if (source.family !== target.family || target.zoneKey !== zoneKey) {
           continue;
         }
 
+        if (!subnetsOverlap(source.subnet, target.subnet)) {
+          continue;
+        }
+
+        const blueprintName = getVxlanBlueprintNameById(blueprintId);
         warnings.push({
           blueprintId,
-          blueprintName: getVxlanBlueprintNameById(blueprintId),
+          blueprintName,
+          zoneLabel,
           subnet: source.subnet,
           otherSubnet: target.subnet,
           otherLabel: target.label,
-          summary: `${source.subnet} overlaps "${target.label}" (${target.subnet}) in ${getVxlanBlueprintNameById(blueprintId)}`
+          summary: `Are you sure? ${source.subnet} overlaps "${target.label}" (${target.subnet}) ` +
+            `inside the same VRF "${zoneLabel}" in ${blueprintName}.`
         });
       }
     }
@@ -2446,7 +2456,7 @@ function renderStretchReviewWarnings(stretchKeys) {
   elements.vrfConfirmWarningCount.textContent = numberFormat(warnings.length);
   elements.vrfConfirmWarningsSection.classList.toggle("hidden", warnings.length === 0);
   elements.vrfConfirmWarnings.innerHTML = warnings
-    .map((item) => `<li class="is-skipped">${escapeHtml(`${item.label}: subnet ${item.summary}`)}</li>`)
+    .map((item) => `<li class="is-overlap">${escapeHtml(`${item.label}: ${item.summary}`)}</li>`)
     .join("");
 }
 
@@ -3615,6 +3625,8 @@ function buildGatewayDiagramModel(report) {
         key: edgeKey,
         leftId,
         rightId,
+        leftName: nodeMap.get(leftId)?.name || leftId,
+        rightName: nodeMap.get(rightId)?.name || rightId,
         confidence: row.confidence || "low",
         hasBgpEvidence: Boolean(row.hasBgpEvidence),
         reciprocalConfig: Boolean(row.reciprocalConfig),
@@ -3820,7 +3832,7 @@ function renderGatewayDiagramSvg(model) {
 
     const path = buildCurvedEdgePath(edge);
 
-    const edgeTitle = `${nodeMap.get(edge.leftId)?.name || edge.leftId} <-> ${nodeMap.get(edge.rightId)?.name || edge.rightId} | ${edge.confidence || "low"} confidence | ${edge.linkCount} link(s)`;
+    const edgeTitle = `${edge.leftName || edge.leftId} <-> ${edge.rightName || edge.rightId} | ${edge.confidence || "low"} confidence | ${edge.linkCount} link(s)`;
 
     const linkCountLabel = edge.linkCount > 1
       ? `

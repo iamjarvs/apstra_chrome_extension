@@ -745,6 +745,30 @@ body {
   color: #7a5a1c;
 }
 
+.progress-issues li.is-overlap {
+  border-left-color: #e0ac53;
+  color: #7a5a1c;
+  font-weight: 600;
+}
+
+.overlap-warning {
+  border: 1px solid #e0ac53;
+  border-radius: 6px;
+  background: #fdf6e8;
+  padding: 9px 11px;
+}
+
+.overlap-warning .section-heading {
+  color: #7a5a1c;
+}
+
+.overlap-warning-lead {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #7a5a1c;
+  margin: 0 0 7px;
+}
+
 .toolbar {
   display: grid;
   grid-template-columns: 1.2fr 1fr 0.8fr;

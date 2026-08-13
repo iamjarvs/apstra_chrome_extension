@@ -163,11 +163,34 @@ stretchVrfs does this:
 5. For each selected row and target blueprint:
    - skip when VRF already exists in target
    - skip with skipped_conflict when the VNI, or the VLAN, is already claimed in the target
-   - drop source-blueprint-scoped fields (routing_policy_id, vrf_id) that the target cannot resolve
-   - keep the source vlan_id so the stretched zone matches, unless the key is in
-     autoVlanStretchKeys, in which case vlan_id is omitted and Apstra allocates one
+    - drop source-blueprint-scoped fields (routing_policy_id, vrf_id) that the target cannot resolve
+    - re-resolve the routing policy by LABEL in the target blueprint (see below)
+    - keep the source vlan_id so the stretched zone matches, unless the key is in
+       autoVlanStretchKeys, in which case vlan_id is omitted and Apstra allocates one
    - POST new security-zone payload to /api/blueprints/{target_id}/security-zones
 6. Return per-target operation outcomes (created, skipped, failed) and summary counts.
+
+### Complete VRF copy
+
+A stretched routing zone must be an identical copy of the source apart from identifiers that cannot
+be reused. buildSecurityZoneCreatePayload therefore spreads the whole raw source object and only
+removes what the target cannot accept, rather than allow-listing individual fields — an allow-list
+silently drops any field a future Apstra release adds.
+
+The security zone carries 17 fields: addressing_support, disable_ipv4, id, junos_evpn_irb_mode,
+l3_mtu, label, route_target, routing_policy_id, rt_policy, sz_type, tags, tenant, vlan_id, vni_id,
+vrf_description, vrf_name, vtep_addressing. Of these only two are ever changed:
+
+- id is dropped; the target blueprint assigns its own.
+- routing_policy_id is blueprint-local, so the source value is meaningless in the target.
+   resolveTargetRoutingPolicyId looks up the source policy's LABEL and finds the policy with the same
+   label in the target blueprint. If the target has no policy with that label the field is omitted
+   entirely and Apstra applies its own default — sending the source id would be rejected or, worse,
+   silently bind an unrelated policy.
+
+vlan_id is additionally omitted when the user opts into Apstra assigning the VLAN. Everything else,
+including vni_id, vrf_description, l3_mtu, junos_evpn_irb_mode, addressing_support, disable_ipv4,
+vtep_addressing, route_target, rt_policy, tenant and tags, is carried over verbatim.
 
 ### Binding targets
 
@@ -187,7 +210,8 @@ Each blueprint row carries a conflictIndex built from data already fetched for t
   a VLAN can be free among zones yet still bound by a virtual network, and Apstra rejects it.
 - vlansBySystem: system id -> VLAN -> virtual network. Virtual network VLANs are per leaf, so the
   same VLAN on a different leaf is fine.
-- ipv4Subnets / ipv6Subnets: subnet -> virtual network, used for overlap warnings only.
+- ipv4Subnets / ipv6Subnets: entries of { subnet, label, zoneLabel, zoneKey }, used for overlap
+   warnings only. The routing zone is recorded because an overlap only matters inside one VRF.
 
 The popup mirrors this in findTargetConflict to grey out and disable conflicted rows before any POST,
 and the service worker re-checks with freshly fetched facts in findStretchConflict, recording
@@ -198,7 +222,11 @@ Two deliberate non-rules:
 - Being outside the target's VNI pool is NOT a conflict. Apstra accepts explicit out-of-pool VNIs and
   real deployments rely on that for DCI networks, so blocking would be a guaranteed false positive.
 - Overlapping SVI subnets are NOT a conflict. The API accepts them and Apstra raises a build error
-  afterwards, so they are surfaced as warnings that never block.
+   afterwards, so they are surfaced as warnings that never block. They are also scoped to a single
+   routing zone: getVxlanSubnetWarnings only warns when the source row's securityZoneLabelKey equals
+   the target entry's zoneKey. The same range in two different VRFs is legitimate — that is the point
+   of a VRF — so warning across zones would be a false positive. The wording asks the user to confirm
+   they really want overlapping IP ranges in the same VRF.
 
 Apstra validation failures arrive as errors.nodes["<node id>"] = [{ message, error_type }].
 extractApiErrorDetail pulls the message fields out; the relevant error_type values are

@@ -6,6 +6,7 @@ const DEFAULT_PAGE_SIZE = 200;
 const MAX_PAGINATION_PAGES = 25;
 const VIRTUAL_NETWORKS_PATH_SUFFIX = "virtual-networks";
 const SECURITY_ZONES_PATH_SUFFIX = "security-zones";
+const ROUTING_POLICIES_PATH_SUFFIX = "routing-policies";
 // Freeform blueprints do not expose the datacenter reference-design APIs this extension uses.
 const UNSUPPORTED_BLUEPRINT_DESIGNS = new Set(["freeform"]);
 
@@ -1115,7 +1116,8 @@ async function stretchVrfs(request) {
         continue;
       }
 
-      const payload = buildSecurityZoneCreatePayload(sourceVrf, autoVlan);
+      const targetRoutingPolicyId = resolveTargetRoutingPolicyId(sourceVrf, sourceBlueprint, targetBlueprint);
+      const payload = buildSecurityZoneCreatePayload(sourceVrf, targetRoutingPolicyId, autoVlan);
 
       try {
         await apiPost(
@@ -1739,9 +1741,10 @@ async function fetchBlueprintVrfFacts(connection, token, authHeaders) {
 
     let securityZonePayload;
     let virtualNetworkPayload;
+    let routingPolicyPayload;
     try {
       // Virtual networks are needed too: their VNIs share the namespace with routing zones.
-      [securityZonePayload, virtualNetworkPayload] = await Promise.all([
+      [securityZonePayload, virtualNetworkPayload, routingPolicyPayload] = await Promise.all([
         apiGet(
           connection,
           `${API_ROOT}/blueprints/${encodedId}/${SECURITY_ZONES_PATH_SUFFIX}`,
@@ -1753,7 +1756,14 @@ async function fetchBlueprintVrfFacts(connection, token, authHeaders) {
           `${API_ROOT}/blueprints/${encodedId}/${VIRTUAL_NETWORKS_PATH_SUFFIX}`,
           token,
           authHeaders
-        )
+        ),
+        // Routing policies are optional enrichment; never fail the blueprint over them.
+        apiGet(
+          connection,
+          `${API_ROOT}/blueprints/${encodedId}/${ROUTING_POLICIES_PATH_SUFFIX}`,
+          token,
+          authHeaders
+        ).catch(() => null)
       ]);
     } catch (error) {
       if (isUnsupportedBlueprintApiError(error)) {
@@ -1768,6 +1778,7 @@ async function fetchBlueprintVrfFacts(connection, token, authHeaders) {
     const securityZones = normalizeSecurityZoneCollection(securityZonePayload);
     const securityZoneById = new Map(securityZones.map((zone) => [zone.id, zone]));
     const vrfs = securityZones.filter((zone) => zone.stretchKey);
+    const routingPolicies = normalizeRoutingPolicyCollection(routingPolicyPayload);
 
     return {
       blueprintId: blueprint.id,
@@ -1776,6 +1787,12 @@ async function fetchBlueprintVrfFacts(connection, token, authHeaders) {
       conflictIndex: buildBlueprintConflictIndex(
         normalizeVirtualNetworkCollection(virtualNetworkPayload, securityZoneById),
         securityZones
+      ),
+      routingPolicyById: new Map(routingPolicies.map((policy) => [policy.id, policy.label])),
+      routingPolicyByLabelKey: new Map(
+        routingPolicies
+          .filter((policy) => policy.labelKey)
+          .map((policy) => [policy.labelKey, policy.id])
       ),
       vrfs,
       vrfByStretchKey: new Map(vrfs.map((zone) => [zone.stretchKey, zone]))
@@ -2092,12 +2109,23 @@ function buildBlueprintConflictIndex(vxlans, securityZones) {
     }
 
     // Overlapping SVI subnets are a build error, not a create failure, so these are warnings only.
+    // The routing zone is recorded because overlaps only matter inside the same VRF.
     if (vxlan.ipv4Subnet) {
-      ipv4Subnets.push({ subnet: vxlan.ipv4Subnet, label: vxlan.label });
+      ipv4Subnets.push({
+        subnet: vxlan.ipv4Subnet,
+        label: vxlan.label,
+        zoneLabel: vxlan.securityZoneLabel || "",
+        zoneKey: normalizeLookupKey(vxlan.securityZoneLabel || "")
+      });
     }
 
     if (vxlan.ipv6Subnet) {
-      ipv6Subnets.push({ subnet: vxlan.ipv6Subnet, label: vxlan.label });
+      ipv6Subnets.push({
+        subnet: vxlan.ipv6Subnet,
+        label: vxlan.label,
+        zoneLabel: vxlan.securityZoneLabel || "",
+        zoneKey: normalizeLookupKey(vxlan.securityZoneLabel || "")
+      });
     }
 
     for (const binding of vxlan.boundTo || []) {
@@ -2267,6 +2295,8 @@ function normalizeSecurityZoneCollection(payload) {
         exportRouteTargets,
         tenant: zone.tenant ?? null,
         tags: Array.isArray(zone.tags) ? zone.tags : [],
+        // Kept for label lookup only; rawSource strips the blueprint-local policy id.
+        routingPolicyId: firstString(zone, ["routing_policy_id"]) || "",
         rawSource: stripSecurityZoneReadOnlyFields(zone)
       };
 
@@ -2274,6 +2304,21 @@ function normalizeSecurityZoneCollection(payload) {
       return normalized;
     })
     .filter((zone) => zone.id);
+}
+
+function normalizeRoutingPolicyCollection(payload) {
+  return extractCollectionValues(payload, ["routing_policies", "items", "results", "data"])
+    .map((item) => {
+      const policy = item && typeof item === "object" ? item : {};
+      const label = firstString(policy, ["label", "name", "display_name"]) || "";
+
+      return {
+        id: firstString(policy, ["id", "uuid"]) || "",
+        label,
+        labelKey: normalizeLookupKey(label)
+      };
+    })
+    .filter((policy) => policy.id);
 }
 
 function buildVrfStretchKey(vrf) {
@@ -2394,6 +2439,28 @@ function resolveTargetSecurityZoneId(sourceVxlan, sourceBlueprint, targetBluepri
   return targetBlueprint.securityZoneByLabelKey.get(sourceZoneKey) || "";
 }
 
+// Policy ids are blueprint-local, so map the source policy to the target's policy of the same label.
+function resolveTargetRoutingPolicyId(sourceVrf, sourceBlueprint, targetBlueprint) {
+  if (!sourceVrf || !targetBlueprint) {
+    return "";
+  }
+
+  const sourcePolicyId = asString(
+    sourceVrf.routingPolicyId || sourceVrf.rawSource?.routing_policy_id || ""
+  ).trim();
+  if (!sourcePolicyId) {
+    return "";
+  }
+
+  const sourcePolicyLabel = sourceBlueprint?.routingPolicyById?.get(sourcePolicyId) || "";
+  const sourcePolicyKey = normalizeLookupKey(sourcePolicyLabel);
+  if (!sourcePolicyKey) {
+    return "";
+  }
+
+  return targetBlueprint.routingPolicyByLabelKey?.get(sourcePolicyKey) || "";
+}
+
 function buildVirtualNetworkCreatePayload(sourceVxlan, targetSecurityZoneId, boundTo, autoAssignVlan = false) {
   const payload = {
     label: sourceVxlan.label,
@@ -2432,7 +2499,7 @@ function buildVirtualNetworkCreatePayload(sourceVxlan, targetSecurityZoneId, bou
   return stripUndefinedProperties(payload);
 }
 
-function buildSecurityZoneCreatePayload(sourceVrf, autoAssignVlan = false) {
+function buildSecurityZoneCreatePayload(sourceVrf, targetRoutingPolicyId = "", autoAssignVlan = false) {
   const rawSource = sourceVrf?.rawSource && typeof sourceVrf.rawSource === "object"
     ? sourceVrf.rawSource
     : {};
@@ -2459,6 +2526,12 @@ function buildSecurityZoneCreatePayload(sourceVrf, autoAssignVlan = false) {
   const vlanId = autoAssignVlan ? null : asVlanId(sourceVrf.vlanId);
   if (vlanId !== null) {
     payload.vlan_id = vlanId;
+  }
+
+  // Only the target-resolved policy id is ever sent; otherwise Apstra applies its default.
+  const routingPolicyId = asString(targetRoutingPolicyId || "").trim();
+  if (routingPolicyId) {
+    payload.routing_policy_id = routingPolicyId;
   }
 
   return stripUndefinedProperties(payload);
