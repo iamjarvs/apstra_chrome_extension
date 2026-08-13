@@ -32,36 +32,21 @@ This repository contains a zero-configuration Chrome extension for Data Center D
 - Runs scope-first VXLAN Stretch to bulk copy missing VXLANs across selected blueprints.
 - Runs scope-first VRF Stretch to bulk copy missing routing zones/security zones across selected blueprints.
 
-## Local Install (Unpacked)
-
-![Chrome extensions page showing Developer mode and Load unpacked](docs/user-guide/screenshots/00-chrome-extensions-install.png)
-
-1. Open Chrome and navigate to chrome://extensions.
-2. Enable Developer mode.
-3. Click Load unpacked.
-4. Select this folder.
-5. Open a Data Center Director UI tab and sign in.
-6. Click the extension icon.
-7. Click Refresh Status.
-8. If needed, click Refresh Token Capture to collect fresh auth headers from live UI traffic.
-9. Open Configlet Audit and click Refresh.
-
-## Downloadable ZIP on Every main Update
+## Install
 
 This repo auto-builds a ZIP package any time `main` is updated (both direct commits and merged PRs).
 
-- Workflow: `.github/workflows/release-zip.yml`
-- Trigger: push to `main`
-- Output: a normal release tagged `main-latest` with one downloadable ZIP asset
-- Included in ZIP: `manifest.json`, `popup/`, `src/`, and `README.md`
-- Direct ZIP download: `https://github.com/iamjarvs/apstra_chrome_extension/releases/download/main-latest/apstra-extension-main-latest.zip`
-- Latest release page: `https://github.com/iamjarvs/apstra_chrome_extension/releases/latest`
-
-To install from the ZIP:
+To install:
 
 1. Open the repository Releases page and select `Main Latest Build`.
 2. Download the ZIP asset from that release.
+
+![GitHub Releases page showing the Main Latest Build ZIP download](docs/user-guide/screenshots/CleanShot%202026-08-13%20at%2001.06.08@2x.png)
+
 3. Unzip it locally.
+
+![Chrome extensions page showing Developer mode and Load unpacked](docs/user-guide/screenshots/00-chrome-extensions-install.png)
+
 4. Open `chrome://extensions`.
 5. Enable Developer mode.
 6. Click Load unpacked.
