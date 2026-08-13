@@ -52,12 +52,14 @@ This repo auto-builds a ZIP package any time `main` is updated (both direct comm
 
 - Workflow: `.github/workflows/release-zip.yml`
 - Trigger: push to `main`
-- Output: a prerelease tagged `main-latest` with one downloadable ZIP asset
+- Output: a normal release tagged `main-latest` with one downloadable ZIP asset
 - Included in ZIP: `manifest.json`, `popup/`, `src/`, and `README.md`
+- Direct ZIP download: `https://github.com/iamjarvs/apstra_chrome_extension/releases/download/main-latest/apstra-extension-main-latest.zip`
+- Latest release page: `https://github.com/iamjarvs/apstra_chrome_extension/releases/latest`
 
 To install from the ZIP:
 
-1. Open the repository Releases page and select the `main-latest` prerelease.
+1. Open the repository Releases page and select `Main Latest Build`.
 2. Download the ZIP asset from that release.
 3. Unzip it locally.
 4. Open `chrome://extensions`.
