@@ -38,6 +38,8 @@ This repository contains a zero-configuration Chrome extension for Data Center D
 
 This repo auto-builds a ZIP package any time `main` is updated (both direct commits and merged PRs).
 
+[**⬇ Download Latest Build**](https://github.com/iamjarvs/apstra_chrome_extension/releases/download/main-latest/apstra-extension-main-latest.zip)
+
 To install:
 
 1. Open the repository Releases page and select `Main Latest Build`.
